@@ -46,8 +46,10 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
     where T : GH_Component
 {
     private readonly Timer _displayProgressTimer;
+    private readonly Stopwatch _computationClock = new();
     private readonly object _stateGate = new();
     private readonly List<Worker<T>> _workers = [];
+    private TimeSpan _lastComputationTime;
     private int _state;
     private int _setData;
     private int _generation;
@@ -99,6 +101,19 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
 
     public TaskCreationOptions TaskCreationOptions { get; set; } = TaskCreationOptions.None;
 
+    public override TimeSpan ProcessorTime
+    {
+        get
+        {
+            lock (_stateGate)
+            {
+                return _computationClock.IsRunning
+                    ? _computationClock.Elapsed
+                    : _lastComputationTime;
+            }
+        }
+    }
+
     protected virtual string FormatProgress(double progress) => progress.ToString("0%");
 
     protected virtual void OnWorkersCompleted() => Message = "Done";
@@ -142,6 +157,7 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
             }
 
             ResetStateLocked();
+            _computationClock.Restart();
         }
     }
 
@@ -180,6 +196,7 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
                 if (BaseWorker is null)
                 {
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Worker class not provided.");
+                    CompleteComputationClockLocked();
                     return;
                 }
 
@@ -222,6 +239,7 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
                 worker.Dispose();
 
             ResetStateLocked();
+            CompleteComputationClockLocked();
         }
 
         OnWorkersCompleted();
@@ -238,6 +256,7 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
                 worker.Dispose();
             }
 
+            CompleteComputationClockLocked();
             ResetStateLocked();
         }
 
@@ -268,6 +287,7 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
                 worker.Dispose();
             }
 
+            CompleteComputationClockLocked();
             ResetStateLocked();
         }
 
@@ -315,5 +335,14 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
         ProgressReports.Clear();
         _state = 0;
         _setData = 0;
+    }
+
+    private void CompleteComputationClockLocked()
+    {
+        if (!_computationClock.IsRunning)
+            return;
+
+        _computationClock.Stop();
+        _lastComputationTime = _computationClock.Elapsed;
     }
 }
