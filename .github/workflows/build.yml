@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Configure native worker
+        run: cmake --preset windows-x64-release
+
+      - name: Build native worker
+        run: cmake --build --preset windows-x64-release --target InstantMeshPlus.Worker
+
+      - name: Build managed solution
+        run: dotnet build InstantMeshPlus.sln -c Release
+
+      - name: Test
+        run: dotnet test tests/InstantMeshPlus.Core.Tests/InstantMeshPlus.Core.Tests.csproj -c Release --no-build
+
+      - name: Upload Grasshopper package payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: InstantMeshPlus-win-x64
+          path: |
+            src/InstantMeshPlus.Grasshopper/bin/Release/net8.0-windows/InstantMeshPlus.Grasshopper.gha
+            src/InstantMeshPlus.Grasshopper/bin/Release/net8.0-windows/InstantMeshPlus.Core.dll
+            src/InstantMeshPlus.Grasshopper/bin/Release/net8.0-windows/InstantMeshPlus.Worker.exe

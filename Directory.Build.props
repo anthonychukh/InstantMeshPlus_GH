@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <Authors>Anthony Chukh</Authors>
+    <Company>InstantMeshPlus Contributors</Company>
+    <RepositoryUrl>https://github.com/anthonychukh/InstantMeshPlus</RepositoryUrl>
+  </PropertyGroup>
+</Project>

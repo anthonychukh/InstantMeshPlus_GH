@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetExt>.gha</TargetExt>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Description>Grasshopper components for constrained Instant Meshes field solving.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\InstantMeshPlus.Core\InstantMeshPlus.Core.csproj" />
+    <PackageReference Include="Grasshopper" Version="8.32.26160.13001" />
+    <PackageReference Include="RhinoCommon" Version="8.32.26160.13001" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\..\artifacts\native\$(Configuration)\worker\$(Configuration)\InstantMeshPlus.Worker.exe')">
+    <Content Include="..\..\artifacts\native\$(Configuration)\worker\$(Configuration)\InstantMeshPlus.Worker.exe"
+             Link="InstantMeshPlus.Worker.exe"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

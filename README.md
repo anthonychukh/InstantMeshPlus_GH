@@ -1,0 +1,137 @@
+# Instant Mesh+
+
+Instant Mesh+ is a Rhino 8 / Grasshopper wrapper around
+[wjakob/instant-meshes](https://github.com/wjakob/instant-meshes) that exposes
+the solver's orientation and position fields instead of treating remeshing as
+a black box.
+
+The v0.1 workflow is:
+
+1. Author field constraints from Grasshopper points, vectors, and curves.
+2. Configure the Instant Meshes field symmetry and extraction settings.
+3. Solve in a cancellable native worker process.
+4. Receive the remesh, full field samples, detected singularities, warnings,
+   timings, and lightweight Grasshopper previews.
+
+The worker is headless. It uses the original Instant Meshes optimization and
+extraction code pinned as a Git submodule; it does not automate the upstream
+viewer.
+
+## Components
+
+| Component | Purpose |
+| --- | --- |
+| **Instant Mesh Settings** | Target by faces, vertices, or model-unit edge length; set RoSy/PoSy, intrinsic/extrinsic mode, feature behavior, extraction, and reproducibility. |
+| **Orientation Constraint** | Project a point and preferred tangent vector to the surface orientation field. |
+| **Position Constraint** | Project a point and anchor to the surface position field. |
+| **Field Curve Guide** | Sample a curve as an orientation guide, or as a combined orientation and edge-path guide. |
+| **Move Singularity** | Detect the nearest existing singularity and request movement along a projected curve. |
+| **Instant Mesh Plus** | Run the worker asynchronously and return mesh, full result, preview geometry, singularities, and diagnostics. |
+
+Constraint weights range from 0 to 1. Multiple constraints at the same region
+are blended after symmetry-compatible alignment. Points are projected to the
+nearest input triangle and distributed to its vertices with barycentric
+weights. Set a nonzero projection tolerance when guide geometry should be
+strictly rejected beyond a known model-space distance.
+
+Singularity paths do **not** prescribe an exact singularity charge or create a
+new singularity. In this release they move a detected existing singularity and
+are supported for the upstream 4-RoSy / 4-PoSy edit operations.
+
+## Exposed Instant Meshes functionality
+
+Available now:
+
+- face-count, vertex-count, and edge-length targets;
+- 2-, 4-, and 6-RoSy orientation fields;
+- quad (4-PoSy) and triangular (6-PoSy) position fields;
+- intrinsic and extrinsic optimization;
+- open-boundary alignment and crease-angle feature normals;
+- pure and dominant tri/quad extraction;
+- smoothing plus surface reprojection;
+- deterministic mode and explicit worker thread count;
+- orientation and position field output;
+- detected orientation and position singularities;
+- point/vector, point/anchor, and sampled-curve constraints;
+- detected-singularity movement paths;
+- phase timing, constraint acceptance counts, warnings, cancellation, and
+  timeout isolation.
+
+Good follow-on features supported by the upstream codebase but not yet exposed:
+
+- oriented point-cloud input and configurable k-nearest-neighbor adjacency;
+- staged solve controls (preprocess, orientation, position, extraction) and
+  reusable solver snapshots;
+- interactive field brushing and local re-optimization;
+- import/export of upstream application-state snapshots;
+- compatibility-oriented export modes and richer mixed-face cleanup controls;
+- explicit crease/boundary curve sets rather than angle-only feature
+  detection;
+- research toward exact prescribed singularity index/charge creation, which
+  requires solver changes rather than a thin wrapper.
+
+## Repository setup
+
+Requirements:
+
+- Windows x64;
+- Rhino 8;
+- Visual Studio 2022 with Desktop development with C++;
+- CMake 3.25 or newer;
+- .NET 8 SDK.
+
+Clone with submodules:
+
+```powershell
+git clone --recursive https://github.com/anthonychukh/InstantMeshPlus.git
+Set-Location InstantMeshPlus
+```
+
+If the repository was cloned without them:
+
+```powershell
+git submodule update --init --recursive
+```
+
+Build and test:
+
+```powershell
+.\scripts\build.ps1 -Configuration Debug
+```
+
+The Grasshopper load directory is:
+
+```text
+src\InstantMeshPlus.Grasshopper\bin\Debug\net8.0-windows
+```
+
+That directory contains `InstantMeshPlus.Grasshopper.gha`,
+`InstantMeshPlus.Core.dll`, and `InstantMeshPlus.Worker.exe`. The committed
+Visual Studio launch profile binds this current output through
+`RHINO_PACKAGE_DIRS`, starts Rhino MCP, and opens Grasshopper. It does not copy
+development files into `%APPDATA%\Grasshopper\Libraries`.
+
+For a manual Rhino launch:
+
+```powershell
+$env:RHINO_PACKAGE_DIRS = (Resolve-Path .\src\InstantMeshPlus.Grasshopper\bin\Debug\net8.0-windows).Path
+& 'C:\Program Files\Rhino 8\System\Rhino.exe' /nosplash /netcore '/runscript="! _mcpstart _Enter _Grasshopper"'
+```
+
+## Packaging
+
+Create a release payload and, when `yak.exe` is available, a Yak package:
+
+```powershell
+.\scripts\Build-YakPackage.ps1 -Version 0.1.0
+```
+
+The package output is written under `artifacts\yak`. See
+[the protocol specification](docs/PROTOCOL.md) and
+[architecture notes](docs/ARCHITECTURE.md) for extension points.
+
+## License
+
+Instant Mesh+ is MIT licensed. Instant Meshes is BSD-licensed and JSON for
+Modern C++ is MIT-licensed. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+and the license files retained in each pinned submodule.

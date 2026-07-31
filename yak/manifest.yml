@@ -1,0 +1,12 @@
+name: instantmeshplus
+version: __VERSION__
+authors:
+  - InstantMeshPlus Contributors
+description: Constraint-aware orientation and position field control for Instant Meshes in Grasshopper.
+url: https://github.com/anthonychukh/InstantMeshPlus
+keywords:
+  - grasshopper
+  - mesh
+  - remesh
+  - field
+  - quad

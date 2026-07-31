@@ -1,0 +1,27 @@
+# Managed build output
+**/bin/
+**/obj/
+TestResults/
+
+# Native build output
+artifacts/
+out/
+.vs/
+CMakeUserPresets.json
+
+# IDE and user state
+*.user
+*.suo
+*.DotSettings.user
+.idea/
+
+# Packages and local Rhino documents
+*.yak
+*.nupkg
+*.3dm
+*.gh
+*.ghx
+
+# Operating system files
+.DS_Store
+Thumbs.db

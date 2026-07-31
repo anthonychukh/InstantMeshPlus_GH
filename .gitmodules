@@ -1,0 +1,6 @@
+[submodule "third_party/instant-meshes"]
+	path = third_party/instant-meshes
+	url = https://github.com/wjakob/instant-meshes.git
+[submodule "third_party/json"]
+	path = third_party/json
+	url = https://github.com/nlohmann/json.git

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Description>Portable contracts, binary protocol, and worker process host for InstantMeshPlus.</Description>
+  </PropertyGroup>
+</Project>

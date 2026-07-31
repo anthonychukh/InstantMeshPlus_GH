@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Rhino 8 + MCP": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\Rhino 8\\System\\Rhino.exe",
+      "commandLineArgs": "/nosplash /netcore\r\n/runscript=\"! _mcpstart _Enter _Grasshopper\"",
+      "environmentVariables": {
+        "RHINO_PACKAGE_DIRS": "$(ProjectDir)$(OutputPath)\\"
+      }
+    }
+  }
+}
