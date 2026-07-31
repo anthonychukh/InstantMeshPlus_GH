@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <TargetExt>.gha</TargetExt>
+    <UseWindowsForms>true</UseWindowsForms>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Description>Grasshopper components for constrained Instant Meshes field solving.</Description>
   </PropertyGroup>

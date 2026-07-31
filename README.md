@@ -9,13 +9,19 @@ The v0.1 workflow is:
 
 1. Author field constraints from Grasshopper points, vectors, and curves.
 2. Configure the Instant Meshes field symmetry and extraction settings.
-3. Solve in a cancellable native worker process.
+3. Solve through a responsive Grasshopper async component and a cancellable
+   native worker process.
 4. Receive the remesh, full field samples, detected singularities, warnings,
    timings, and lightweight Grasshopper previews.
 
-The worker is headless. It uses the original Instant Meshes optimization and
-extraction code pinned as a Git submodule; it does not automate the upstream
-viewer.
+The solver component follows the
+[Speckle GrasshopperAsyncComponent](https://github.com/specklesystems/GrasshopperAsyncComponent)
+worker pattern: inputs are captured on the Grasshopper thread, conversion and
+remeshing run in the background, and results return on the Grasshopper thread.
+It reports phase progress, cancels obsolete solves when inputs change, and
+offers **Cancel remeshing** in its context menu. The native worker is headless.
+It uses the original Instant Meshes optimization and extraction code pinned as
+a Git submodule; it does not automate the upstream viewer.
 
 ## Components
 
@@ -54,8 +60,8 @@ Available now:
 - detected orientation and position singularities;
 - point/vector, point/anchor, and sampled-curve constraints;
 - detected-singularity movement paths;
-- phase timing, constraint acceptance counts, warnings, cancellation, and
-  timeout isolation.
+- phase timing, constraint acceptance counts, warnings, eager async
+  cancellation, visible progress, and timeout isolation.
 
 Good follow-on features supported by the upstream codebase but not yet exposed:
 
@@ -132,6 +138,7 @@ The package output is written under `artifacts\yak`. See
 
 ## License
 
-Instant Mesh+ is MIT licensed. Instant Meshes is BSD-licensed and JSON for
-Modern C++ is MIT-licensed. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-and the license files retained in each pinned submodule.
+Instant Mesh+ is MIT licensed. Instant Meshes is BSD-licensed, JSON for Modern
+C++ is MIT-licensed, and GrasshopperAsyncComponent is Apache-2.0-licensed. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the license files retained
+in each pinned submodule.

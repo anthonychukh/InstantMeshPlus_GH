@@ -1,21 +1,26 @@
 using System.Drawing;
 using System.Text.Json;
+using System.Windows.Forms;
 using Grasshopper.Kernel;
+using GrasshopperAsyncComponent;
 using InstantMeshPlus.Core;
 using Rhino.Geometry;
 
 namespace InstantMeshPlus.Grasshopper;
 
-public sealed class InstantMeshComponent : GH_TaskCapableComponent<InstantMeshComponent.SolveOutcome>
+public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponent>
 {
+    private string? _progressPhase;
+
     public InstantMeshComponent()
         : base(
             "Instant Mesh Plus",
             "Instant Mesh+",
-            "Run constraint-aware Instant Meshes in a cancellable out-of-process worker.",
+            "Run constraint-aware Instant Meshes in a responsive, cancellable worker.",
             ComponentUtilities.Category,
             "Solve")
     {
+        BaseWorker = new InstantMeshWorker(this);
     }
 
     public override Guid ComponentGuid => new("37D97326-6D27-4F06-A7DE-71D16948C4DE");
@@ -49,68 +54,37 @@ public sealed class InstantMeshComponent : GH_TaskCapableComponent<InstantMeshCo
         outputs.AddTextParameter("Diagnostics", "D", "Constraint counts, warnings, and phase timings.", GH_ParamAccess.item);
     }
 
-    protected override void SolveInstance(IGH_DataAccess data)
+    protected override void AppendAdditionalComponentMenuItems(ToolStripDropDown menu)
     {
-        if (!TryReadInputs(data, out var input))
-            return;
-        if (!input.Run)
-        {
-            Message = "Paused";
-            return;
-        }
-
-        if (InPreSolve)
-        {
-            TaskList.Add(Task.Run(
-                () => ComputeAsync(input, CancelToken),
-                CancelToken));
-            return;
-        }
-
-        if (!GetSolveResults(data, out var outcome))
-            outcome = ComputeAsync(input, CancellationToken.None).GetAwaiter().GetResult();
-
-        if (outcome.Error is not null)
-        {
-            Message = "Error";
-            AddRuntimeMessage(
-                outcome.Error is OperationCanceledException
-                    ? GH_RuntimeMessageLevel.Warning
-                    : GH_RuntimeMessageLevel.Error,
-                outcome.Error.Message);
-            return;
-        }
-
-        var result = outcome.Result!;
-        var displayStride = Math.Max(1, input.PreviewStride);
-        var displayScale = Math.Max(result.Diagnostics.Scale * 0.35f, 1e-5f);
-        var orientations = result.Field
-            .Where((_, index) => index % displayStride == 0)
-            .Select(sample =>
-            {
-                var start = ComponentUtilities.ToPoint(sample.Point);
-                var end = ComponentUtilities.ToPoint(sample.Point + sample.Orientation * displayScale);
-                return new Line(start, end);
-            })
-            .ToArray();
-        var positions = result.Field
-            .Where((_, index) => index % displayStride == 0)
-            .Select(sample => ComponentUtilities.ToPoint(sample.Position))
-            .ToArray();
-
-        data.SetData(0, ComponentUtilities.ToRhinoMesh(result));
-        data.SetData(1, result);
-        data.SetDataList(2, orientations);
-        data.SetDataList(3, positions);
-        data.SetDataList(4, result.OrientationSingularities.Select(s => ComponentUtilities.ToPoint(s.Point)));
-        data.SetDataList(5, result.PositionSingularities.Select(s => ComponentUtilities.ToPoint(s.Point)));
-        data.SetData(6, FormatDiagnostics(result.Diagnostics));
-        foreach (var warning in result.Diagnostics.Warnings)
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, warning);
-        Message = $"{result.FaceCount:N0} faces";
+        base.AppendAdditionalComponentMenuItems(menu);
+        Menu_AppendSeparator(menu);
+        Menu_AppendItem(
+            menu,
+            "Cancel remeshing",
+            (_, _) => RequestCancellation(),
+            WorkerCount > 0);
     }
 
-    private bool TryReadInputs(IGH_DataAccess data, out SolveInput input)
+    protected override string FormatProgress(double progress)
+    {
+        var phase = Volatile.Read(ref _progressPhase);
+        return string.IsNullOrWhiteSpace(phase)
+            ? progress.ToString("0%")
+            : $"{progress:0%} - {phase}";
+    }
+
+    protected override void OnWorkersCompleted()
+    {
+        // SetData publishes a more useful terminal state.
+    }
+
+    private void UpdateProgressPhase(string phase) =>
+        Volatile.Write(ref _progressPhase, phase);
+
+    private void ResetProgress() =>
+        Volatile.Write(ref _progressPhase, null);
+
+    private bool TryCaptureInputs(IGH_DataAccess data, out SolveInput input)
     {
         input = default!;
         Mesh? mesh = null;
@@ -132,20 +106,20 @@ public sealed class InstantMeshComponent : GH_TaskCapableComponent<InstantMeshCo
         data.GetData(6, ref run);
         data.GetData(7, ref previewStride);
         data.GetData(8, ref worker);
+
         try
         {
-            var request = new RemeshRequest
-            {
-                Mesh = ComponentUtilities.ToCoreMesh(mesh),
-                Settings = ComponentUtilities.Unwrap<RemeshSettings>(settingsValue) ?? new RemeshSettings(),
-                OrientationConstraints = ComponentUtilities.UnwrapMany<OrientationConstraint>(orientationValues),
-                PositionConstraints = ComponentUtilities.UnwrapMany<PositionConstraint>(positionValues),
-                Guides = ComponentUtilities.UnwrapMany<CurveGuide>(guideValues),
-                SingularityPaths = ComponentUtilities.UnwrapMany<SingularityPath>(singularityValues)
-            };
-            request.Validate();
+            var settings =
+                ComponentUtilities.Unwrap<RemeshSettings>(settingsValue) ??
+                new RemeshSettings();
+            settings.Validate();
             input = new SolveInput(
-                request,
+                mesh.DuplicateMesh(),
+                settings,
+                ComponentUtilities.UnwrapMany<OrientationConstraint>(orientationValues),
+                ComponentUtilities.UnwrapMany<PositionConstraint>(positionValues),
+                ComponentUtilities.UnwrapMany<CurveGuide>(guideValues),
+                ComponentUtilities.UnwrapMany<SingularityPath>(singularityValues),
                 run,
                 Math.Max(1, previewStride),
                 string.IsNullOrWhiteSpace(worker) ? null : worker);
@@ -158,22 +132,53 @@ public sealed class InstantMeshComponent : GH_TaskCapableComponent<InstantMeshCo
         }
     }
 
-    private static async Task<SolveOutcome> ComputeAsync(
-        SolveInput input,
-        CancellationToken cancellationToken)
+    private static RemeshRequest BuildRequest(SolveInput input)
     {
-        try
+        var request = new RemeshRequest
         {
-            var result = await new WorkerRunner().RunAsync(
-                input.Request,
-                new WorkerOptions { ExecutablePath = input.WorkerPath },
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            return new SolveOutcome(result, null);
-        }
-        catch (Exception error)
-        {
-            return new SolveOutcome(null, error);
-        }
+            Mesh = ComponentUtilities.ToCoreMesh(input.Mesh),
+            Settings = input.Settings,
+            OrientationConstraints = input.OrientationConstraints,
+            PositionConstraints = input.PositionConstraints,
+            Guides = input.Guides,
+            SingularityPaths = input.SingularityPaths
+        };
+        request.Validate();
+        return request;
+    }
+
+    private static SolvePresentation BuildPresentation(
+        RemeshResult result,
+        int previewStride)
+    {
+        var displayStride = Math.Max(1, previewStride);
+        var displayScale = Math.Max(result.Diagnostics.Scale * 0.35f, 1e-5f);
+        var orientations = result.Field
+            .Where((_, index) => index % displayStride == 0)
+            .Select(sample =>
+            {
+                var start = ComponentUtilities.ToPoint(sample.Point);
+                var end = ComponentUtilities.ToPoint(
+                    sample.Point + sample.Orientation * displayScale);
+                return new Line(start, end);
+            })
+            .ToArray();
+        var positions = result.Field
+            .Where((_, index) => index % displayStride == 0)
+            .Select(sample => ComponentUtilities.ToPoint(sample.Position))
+            .ToArray();
+
+        return new SolvePresentation(
+            ComponentUtilities.ToRhinoMesh(result),
+            orientations,
+            positions,
+            result.OrientationSingularities
+                .Select(singularity => ComponentUtilities.ToPoint(singularity.Point))
+                .ToArray(),
+            result.PositionSingularities
+                .Select(singularity => ComponentUtilities.ToPoint(singularity.Point))
+                .ToArray(),
+            FormatDiagnostics(result.Diagnostics));
     }
 
     private static string FormatDiagnostics(RemeshDiagnostics diagnostics) =>
@@ -187,11 +192,149 @@ public sealed class InstantMeshComponent : GH_TaskCapableComponent<InstantMeshCo
             diagnostics.TimingsMilliseconds
         }, new JsonSerializerOptions { WriteIndented = true });
 
+    private static double MapProgress(WorkerProgress progress) =>
+        progress.Phase switch
+        {
+            "preprocess" => 0.20 * progress.Progress,
+            "orientation" => 0.20 + 0.35 * progress.Progress,
+            "position" => 0.55 + 0.35 * progress.Progress,
+            "extract" => 0.90 + 0.10 * progress.Progress,
+            _ => 0
+        };
+
     private sealed record SolveInput(
-        RemeshRequest Request,
+        Mesh Mesh,
+        RemeshSettings Settings,
+        IReadOnlyList<OrientationConstraint> OrientationConstraints,
+        IReadOnlyList<PositionConstraint> PositionConstraints,
+        IReadOnlyList<CurveGuide> Guides,
+        IReadOnlyList<SingularityPath> SingularityPaths,
         bool Run,
         int PreviewStride,
         string? WorkerPath);
 
-    public sealed record SolveOutcome(RemeshResult? Result, Exception? Error);
+    private sealed record SolvePresentation(
+        Mesh Mesh,
+        IReadOnlyList<Line> Orientations,
+        IReadOnlyList<Point3d> Positions,
+        IReadOnlyList<Point3d> OrientationSingularities,
+        IReadOnlyList<Point3d> PositionSingularities,
+        string Diagnostics);
+
+    private sealed class InstantMeshWorker : WorkerInstance<InstantMeshComponent>
+    {
+        private SolveInput? _input;
+        private RemeshResult? _result;
+        private SolvePresentation? _presentation;
+        private Exception? _failure;
+        private bool _hasInputs;
+
+        public InstantMeshWorker(
+            InstantMeshComponent parent,
+            string id = "baseworker",
+            CancellationToken cancellationToken = default)
+            : base(parent, id, cancellationToken)
+        {
+        }
+
+        public override WorkerInstance<InstantMeshComponent> Duplicate(
+            string id,
+            CancellationToken cancellationToken) =>
+            new InstantMeshWorker(Parent, id, cancellationToken);
+
+        public override void GetData(
+            IGH_DataAccess access,
+            GH_ComponentParamServer parameters)
+        {
+            _hasInputs = Parent.TryCaptureInputs(access, out _input);
+            if (_input?.Run == true)
+                Parent.ResetProgress();
+        }
+
+        public override async Task DoWork(
+            Action<string, double> reportProgress,
+            Action done)
+        {
+            if (!_hasInputs || _input is null || !_input.Run)
+            {
+                done();
+                return;
+            }
+
+            try
+            {
+                reportProgress(Id, 0);
+                var progress = new InlineProgress<WorkerProgress>(value =>
+                {
+                    Parent.UpdateProgressPhase(value.Phase);
+                    reportProgress(Id, MapProgress(value));
+                });
+                var request = BuildRequest(_input);
+                _result = await new WorkerRunner().RunAsync(
+                    request,
+                    new WorkerOptions { ExecutablePath = _input.WorkerPath },
+                    progress,
+                    CancellationToken).ConfigureAwait(false);
+                CancellationToken.ThrowIfCancellationRequested();
+                _presentation = BuildPresentation(_result, _input.PreviewStride);
+                reportProgress(Id, 1);
+                done();
+            }
+            catch (OperationCanceledException) when (CancellationToken.IsCancellationRequested)
+            {
+                // The parent already reset this worker; cancelled work must not
+                // expire the solution or publish stale results.
+            }
+            catch (Exception error)
+            {
+                _failure = error;
+                done();
+            }
+        }
+
+        public override void SetData(IGH_DataAccess access)
+        {
+            if (!_hasInputs || _input is null)
+            {
+                Parent.Message = null;
+                return;
+            }
+
+            if (!_input.Run)
+            {
+                Parent.Message = "Paused";
+                return;
+            }
+
+            if (_failure is not null)
+            {
+                Parent.Message = "Failed";
+                Parent.AddRuntimeMessage(
+                    _failure is OperationCanceledException
+                        ? GH_RuntimeMessageLevel.Warning
+                        : GH_RuntimeMessageLevel.Error,
+                    _failure.Message);
+                return;
+            }
+
+            if (_result is null || _presentation is null)
+                return;
+
+            access.SetData(0, _presentation.Mesh);
+            access.SetData(1, _result);
+            access.SetDataList(2, _presentation.Orientations);
+            access.SetDataList(3, _presentation.Positions);
+            access.SetDataList(4, _presentation.OrientationSingularities);
+            access.SetDataList(5, _presentation.PositionSingularities);
+            access.SetData(6, _presentation.Diagnostics);
+            foreach (var warning in _result.Diagnostics.Warnings)
+                Parent.AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, warning);
+            Parent.Message = $"{_result.FaceCount:N0} faces";
+        }
+
+        private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+        {
+            public void Report(T value) => report(value);
+        }
+    }
 }

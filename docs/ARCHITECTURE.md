@@ -5,7 +5,12 @@
 Grasshopper and Rhino stay isolated from the native optimizer:
 
 ```text
-Grasshopper components
+Grasshopper UI thread
+  capture inputs / publish outputs
+        |
+        v
+GrasshopperAsyncComponent worker task
+  convert geometry / build previews
         |
         v
 InstantMeshPlus.Core
@@ -25,8 +30,12 @@ Rhino mesh, full field result, previews, diagnostics
 Every solve gets a unique temporary directory. JSON describes settings and
 file names; binary payloads carry large float32 and uint32 arrays. This keeps
 the protocol inspectable without turning geometry into large JSON documents.
-The managed runner owns the child process and kills its process tree on
-cancellation or timeout.
+The solver uses a .NET 8 source adaptation of Speckle's
+GrasshopperAsyncComponent v2.0.3 worker pattern. A new Grasshopper solution
+eagerly cancels obsolete worker tasks, while a generation check prevents stale
+tasks from publishing results or progress. Mesh conversion, native execution,
+and preview construction run off the Rhino UI thread. The managed runner owns
+the child process and kills its process tree on cancellation or timeout.
 
 ## Native pipeline
 
