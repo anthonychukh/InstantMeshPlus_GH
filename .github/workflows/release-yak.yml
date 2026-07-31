@@ -1,0 +1,184 @@
+name: Release Yak package
+
+on:
+  push:
+    tags:
+      - 'release_v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yak-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  YAK_CLI_VERSION: 0.13.0
+  YAK_PUBLIC_SOURCE: https://yak.rhino3d.com
+  PACKAGE_NAME: instantmeshplus
+  EXPECTED_DISTRIBUTION: rh8_32
+  RELEASE_BRANCH: main
+
+jobs:
+  validate-and-release:
+    runs-on: windows-2022
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Validate tag, version, and release branch
+        shell: pwsh
+        run: |
+          $match = [regex]::Match($env:GITHUB_REF_NAME, '^release_v(?<version>\d+\.\d+\.\d+)$')
+          if (-not $match.Success) {
+            throw "Release tag must exactly match release_vX.Y.Z; received '$env:GITHUB_REF_NAME'."
+          }
+          $tagVersion = $match.Groups['version'].Value
+          [xml] $props = Get-Content -Raw -LiteralPath 'Directory.Build.props'
+          $projectVersion = $props.Project.PropertyGroup.VersionPrefix
+          if ($tagVersion -cne $projectVersion) {
+            throw "Tag version '$tagVersion' does not match VersionPrefix '$projectVersion'."
+          }
+          git fetch --no-tags origin "$env:RELEASE_BRANCH`:refs/remotes/origin/$env:RELEASE_BRANCH"
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/$env:RELEASE_BRANCH." }
+          git merge-base --is-ancestor $env:GITHUB_SHA "origin/$env:RELEASE_BRANCH"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tagged commit is not contained in origin/$env:RELEASE_BRANCH."
+          }
+          "PACKAGE_VERSION=$tagVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Refuse an existing GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $lookup = @(gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME" 2>&1)
+          $lookupExit = $LASTEXITCODE
+          if ($lookupExit -eq 0) {
+            throw "A GitHub release already exists for '$env:GITHUB_REF_NAME'."
+          }
+          if (($lookup -join [Environment]::NewLine) -notmatch 'HTTP 404') {
+            throw "Could not verify that the GitHub release is absent: $($lookup -join [Environment]::NewLine)"
+          }
+          $global:LASTEXITCODE = 0
+
+      - name: Download pinned Yak CLI
+        shell: pwsh
+        run: |
+          $yakPath = Join-Path $env:RUNNER_TEMP "yak-$env:YAK_CLI_VERSION.exe"
+          Invoke-WebRequest `
+            -Uri "https://files.mcneel.com/yak/tools/$env:YAK_CLI_VERSION/yak.exe" `
+            -OutFile $yakPath
+          if (-not (Test-Path -LiteralPath $yakPath -PathType Leaf)) {
+            throw 'Yak CLI download did not create a file.'
+          }
+          "YAK_PATH=$yakPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $yakPath version
+          if ($LASTEXITCODE -ne 0) { throw 'Downloaded Yak CLI did not run.' }
+
+      - name: Refuse an existing public Yak version
+        shell: pwsh
+        run: |
+          & .\scripts\Test-YakPackageVersion.ps1 `
+            -YakPath $env:YAK_PATH `
+            -Source $env:YAK_PUBLIC_SOURCE `
+            -PackageName $env:PACKAGE_NAME `
+            -Version $env:PACKAGE_VERSION
+
+      - name: Require Yak production credential
+        shell: pwsh
+        env:
+          YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:YAK_TOKEN)) {
+            throw 'Repository secret YAK_TOKEN is required.'
+          }
+
+      - name: Build and test release package
+        shell: pwsh
+        run: |
+          & .\scripts\Build-YakPackage.ps1 `
+            -Version $env:PACKAGE_VERSION `
+            -YakPath $env:YAK_PATH
+
+      - name: Validate Yak archive
+        shell: pwsh
+        run: |
+          python .\scripts\validate_yak_archives.py `
+            --root .\artifacts\yak `
+            --package-name $env:PACKAGE_NAME `
+            --filename-prefix instantmeshplus `
+            --base-version $env:PACKAGE_VERSION `
+            --expected-version $env:PACKAGE_VERSION `
+            --expected-distribution $env:EXPECTED_DISTRIBUTION `
+            --expected-platform win `
+            --expected-guid a8053c38-fdfa-4d99-bc31-b285e4bb59c5 `
+            --required-entry manifest.yml `
+            --required-entry InstantMeshPlus.Grasshopper.gha `
+            --required-entry InstantMeshPlus.Core.dll `
+            --required-entry InstantMeshPlus.Worker.exe `
+            --write-list .\artifacts\yak\validated-archives.txt
+
+      - name: Create draft GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archives = @(Get-Content -LiteralPath '.\artifacts\yak\validated-archives.txt')
+          if ($archives.Count -ne 1) { throw "Expected one validated archive, found $($archives.Count)." }
+          gh release create $env:GITHUB_REF_NAME @archives `
+            --draft `
+            --verify-tag `
+            --title "Instant Mesh+ $env:PACKAGE_VERSION" `
+            --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Draft GitHub release creation failed.' }
+
+      - name: Push validated package to public Yak
+        shell: pwsh
+        env:
+          YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
+        run: |
+          $archives = @(Get-Content -LiteralPath '.\artifacts\yak\validated-archives.txt')
+          if ($archives.Count -ne 1) { throw "Expected one validated archive, found $($archives.Count)." }
+          foreach ($archive in $archives) {
+            & $env:YAK_PATH push "--source=$env:YAK_PUBLIC_SOURCE" $archive
+            if ($LASTEXITCODE -ne 0) { throw "Public Yak push failed for '$archive'." }
+          }
+
+      - name: Verify public Yak package version
+        shell: pwsh
+        run: |
+          & .\scripts\Test-YakPackageVersion.ps1 `
+            -YakPath $env:YAK_PATH `
+            -Source $env:YAK_PUBLIC_SOURCE `
+            -PackageName $env:PACKAGE_NAME `
+            -Version $env:PACKAGE_VERSION `
+            -ShouldExist `
+            -RetryCount 6 `
+            -DelaySeconds 10
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit $env:GITHUB_REF_NAME --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed.' }
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value @"
+          ## Yak public release
+
+          Published `$env:PACKAGE_NAME` version `$env:PACKAGE_VERSION` after Yak search verification.
+          "@

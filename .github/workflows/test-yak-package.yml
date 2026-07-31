@@ -1,0 +1,125 @@
+name: Test Yak package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yak-test-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  YAK_CLI_VERSION: 0.13.0
+  YAK_TEST_SOURCE: https://test.yak.rhino3d.com
+  PACKAGE_NAME: instantmeshplus
+  EXPECTED_DISTRIBUTION: rh8_32
+
+jobs:
+  build-and-push-test:
+    runs-on: windows-2022
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Download pinned Yak CLI
+        shell: pwsh
+        run: |
+          $yakPath = Join-Path $env:RUNNER_TEMP "yak-$env:YAK_CLI_VERSION.exe"
+          Invoke-WebRequest `
+            -Uri "https://files.mcneel.com/yak/tools/$env:YAK_CLI_VERSION/yak.exe" `
+            -OutFile $yakPath
+          if (-not (Test-Path -LiteralPath $yakPath -PathType Leaf)) {
+            throw 'Yak CLI download did not create a file.'
+          }
+          "YAK_PATH=$yakPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $yakPath version
+          if ($LASTEXITCODE -ne 0) { throw 'Downloaded Yak CLI did not run.' }
+
+      - name: Require Yak test-server credential
+        shell: pwsh
+        env:
+          YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:YAK_TOKEN)) {
+            throw 'Repository secret YAK_TOKEN is required.'
+          }
+
+      - name: Build and test release package
+        shell: pwsh
+        run: |
+          [xml] $props = Get-Content -Raw -LiteralPath 'Directory.Build.props'
+          $version = $props.Project.PropertyGroup.VersionPrefix
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'Directory.Build.props does not define VersionPrefix.'
+          }
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & .\scripts\Build-YakPackage.ps1 -Version $version -YakPath $env:YAK_PATH
+
+      - name: Validate Yak archive
+        shell: pwsh
+        run: |
+          python .\scripts\validate_yak_archives.py `
+            --root .\artifacts\yak `
+            --package-name $env:PACKAGE_NAME `
+            --filename-prefix instantmeshplus `
+            --base-version $env:PACKAGE_VERSION `
+            --expected-version $env:PACKAGE_VERSION `
+            --expected-distribution $env:EXPECTED_DISTRIBUTION `
+            --expected-platform win `
+            --expected-guid a8053c38-fdfa-4d99-bc31-b285e4bb59c5 `
+            --required-entry manifest.yml `
+            --required-entry InstantMeshPlus.Grasshopper.gha `
+            --required-entry InstantMeshPlus.Core.dll `
+            --required-entry InstantMeshPlus.Worker.exe `
+            --write-list .\artifacts\yak\validated-archives.txt
+
+      - name: Upload validated package artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: instantmeshplus-yak
+          path: artifacts/yak/*.yak
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Push validated package to Yak test server
+        shell: pwsh
+        env:
+          YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
+        run: |
+          $archives = @(Get-Content -LiteralPath '.\artifacts\yak\validated-archives.txt')
+          if ($archives.Count -ne 1) { throw "Expected one validated archive, found $($archives.Count)." }
+          foreach ($archive in $archives) {
+            & $env:YAK_PATH push "--source=$env:YAK_TEST_SOURCE" $archive
+            if ($LASTEXITCODE -ne 0) { throw "Yak test-server push failed for '$archive'." }
+          }
+
+      - name: Verify test-server package version
+        shell: pwsh
+        run: |
+          & .\scripts\Test-YakPackageVersion.ps1 `
+            -YakPath $env:YAK_PATH `
+            -Source $env:YAK_TEST_SOURCE `
+            -PackageName $env:PACKAGE_NAME `
+            -Version $env:PACKAGE_VERSION `
+            -ShouldExist `
+            -RetryCount 6 `
+            -DelaySeconds 10
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value @"
+          ## Yak test-server verification
+
+          Verified `$env:PACKAGE_NAME` version `$env:PACKAGE_VERSION` at `$env:YAK_TEST_SOURCE`.
+          "@

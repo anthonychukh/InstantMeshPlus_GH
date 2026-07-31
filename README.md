@@ -126,13 +126,47 @@ $env:RHINO_PACKAGE_DIRS = (Resolve-Path .\src\InstantMeshPlus.Grasshopper\bin\De
 
 ## Packaging
 
-Create a release payload and, when `yak.exe` is available, a Yak package:
+Create a release payload and Yak package with Rhino 8's installed Yak CLI:
 
 ```powershell
 .\scripts\Build-YakPackage.ps1 -Version 0.1.0
 ```
 
-The package output is written under `artifacts\yak`. See
+`Directory.Build.props` is the authoritative package version. The current
+Windows-only package is built as one `instantmeshplus-<version>-rh8_32-win.yak`
+archive under `artifacts\yak`; the Rhino floor is inferred from the project's
+RhinoCommon 8.32 reference. The package contains the Grasshopper assembly,
+managed core, native worker, manifest, and license notices without debug
+symbols.
+
+Two guarded GitHub Actions workflows are configured but are not run by normal
+branch pushes:
+
+- **Test Yak package** is manual. It builds and validates the same release
+  archive, uploads it as a workflow artifact, pushes it to McNeel's test
+  server, and confirms the exact version by search. The test server is an
+  external write and is cleared nightly.
+- **Release Yak package** runs only when a tag matching `release_vX.Y.Z` is
+  pushed. It requires an exact tag/version match, a commit contained in
+  `main`, an unused GitHub release tag, and an unpublished public Yak version.
+  It creates a draft GitHub release before the Yak push and publishes that
+  release only after the public Yak search confirms the version.
+
+Both workflows use the pinned standalone Yak 0.13.0 download documented by
+McNeel and require a repository secret named `YAK_TOKEN`. Generate the CI token
+locally with `yak login --ci`, then store only its value in the GitHub secret;
+never commit or print it. No signing or obfuscation secrets are currently
+required.
+
+After the manual test workflow succeeds and the intended release commit is on
+`main`, the public trigger format is:
+
+```powershell
+git tag release_v0.1.0
+git push origin release_v0.1.0
+```
+
+Do not push the tag until a public release is intended. See
 [the protocol specification](docs/PROTOCOL.md) and
 [architecture notes](docs/ARCHITECTURE.md) for extension points.
 
