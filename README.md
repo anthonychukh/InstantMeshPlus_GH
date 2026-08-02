@@ -14,15 +14,6 @@ The v0.1 workflow is:
 4. Receive the remesh, full field samples, detected singularities, warnings,
    timings, and lightweight Grasshopper previews.
 
-The solver component follows the
-[Speckle GrasshopperAsyncComponent](https://github.com/specklesystems/GrasshopperAsyncComponent)
-worker pattern: inputs are captured on the Grasshopper thread, conversion and
-remeshing run in the background, and results return on the Grasshopper thread.
-It reports phase progress, cancels obsolete solves when inputs change, and
-offers **Cancel remeshing** in its context menu. The native worker is headless.
-It uses the original Instant Meshes optimization and extraction code pinned as
-a Git submodule; it does not automate the upstream viewer.
-
 ## Components
 
 | Component | Purpose |
@@ -153,10 +144,12 @@ branch pushes:
   release only after the public Yak search confirms the version.
 
 Both workflows use the pinned standalone Yak 0.13.0 download documented by
-McNeel and require a repository secret named `YAK_TOKEN`. Generate the CI token
-locally with `yak login --ci`, then store only its value in the GitHub secret;
-never commit or print it. No signing or obfuscation secrets are currently
-required.
+McNeel and require an environment secret named `YAK_TOKEN` in the
+`yak-production` environment. Configure that environment to allow the `main`
+branch and selected tags matching `release_v*.*.*`; add a required reviewer
+when a manual release approval is desired. Generate the CI token locally with
+`yak login --ci`, then store only its value in the environment secret; never
+commit or print it. No signing or obfuscation secrets are currently required.
 
 After the manual test workflow succeeds and the intended release commit is on
 `main`, the public trigger format is:

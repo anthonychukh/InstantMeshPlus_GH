@@ -19,6 +19,7 @@ env:
 jobs:
   build-and-push-test:
     runs-on: windows-2022
+    environment: yak-production
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -55,7 +56,7 @@ jobs:
           YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:YAK_TOKEN)) {
-            throw 'Repository secret YAK_TOKEN is required.'
+            throw 'The yak-production environment secret YAK_TOKEN is required.'
           }
 
       - name: Build and test release package
