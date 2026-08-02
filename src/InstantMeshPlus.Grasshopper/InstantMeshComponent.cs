@@ -14,8 +14,8 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
 
     public InstantMeshComponent()
         : base(
-            "Instant Mesh Plus",
-            "Instant Mesh+",
+            "Instant Mesh Plus Solver",
+            "IM Solver",
             "Run constraint-aware Instant Meshes in a responsive, cancellable worker.",
             ComponentUtilities.Category,
             "Solve")
@@ -24,7 +24,7 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
     }
 
     public override Guid ComponentGuid => new("37D97326-6D27-4F06-A7DE-71D16948C4DE");
-    protected override Bitmap Icon => null!;
+    protected override Bitmap Icon => ComponentIcons.InstantMesh;
     public override GH_Exposure Exposure => GH_Exposure.primary;
 
     protected override void RegisterInputParams(GH_InputParamManager inputs)

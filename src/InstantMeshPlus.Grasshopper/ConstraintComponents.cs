@@ -18,7 +18,7 @@ public sealed class OrientationConstraintComponent : GH_Component
     }
 
     public override Guid ComponentGuid => new("80A23959-0CFA-416A-B171-792AF4BBC64B");
-    protected override Bitmap Icon => null!;
+    protected override Bitmap Icon => ComponentIcons.OrientationConstraint;
 
     protected override void RegisterInputParams(GH_InputParamManager inputs)
     {
@@ -62,7 +62,7 @@ public sealed class PositionConstraintComponent : GH_Component
     }
 
     public override Guid ComponentGuid => new("4244AA75-8BA6-4344-8172-A07574FA9F6B");
-    protected override Bitmap Icon => null!;
+    protected override Bitmap Icon => ComponentIcons.PositionConstraint;
 
     protected override void RegisterInputParams(GH_InputParamManager inputs)
     {
@@ -106,7 +106,7 @@ public sealed class CurveGuideComponent : GH_Component
     }
 
     public override Guid ComponentGuid => new("70868901-D73A-49D0-B098-C975D1D6387A");
-    protected override Bitmap Icon => null!;
+    protected override Bitmap Icon => ComponentIcons.CurveGuide;
 
     protected override void RegisterInputParams(GH_InputParamManager inputs)
     {
@@ -166,7 +166,7 @@ public sealed class SingularityPathComponent : GH_Component
     }
 
     public override Guid ComponentGuid => new("683BA0EF-76F5-45C3-9B13-E24B26DEFEBD");
-    protected override Bitmap Icon => null!;
+    protected override Bitmap Icon => ComponentIcons.SingularityPath;
 
     protected override void RegisterInputParams(GH_InputParamManager inputs)
     {

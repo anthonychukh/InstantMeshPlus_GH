@@ -17,7 +17,7 @@ public sealed class SettingsComponent : GH_Component
     }
 
     public override Guid ComponentGuid => new("8A3BB3D2-5140-40CD-9DD0-D5468DFDB94D");
-    protected override Bitmap Icon => null!;
+    protected override Bitmap Icon => ComponentIcons.Settings;
     public override GH_Exposure Exposure => GH_Exposure.primary;
 
     protected override void RegisterInputParams(GH_InputParamManager inputs)

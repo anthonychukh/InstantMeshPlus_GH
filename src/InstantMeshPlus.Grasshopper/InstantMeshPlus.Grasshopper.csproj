@@ -13,6 +13,10 @@
     <PackageReference Include="RhinoCommon" Version="8.32.26160.13001" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Icons\*.png" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('..\..\artifacts\native\$(Configuration)\worker\$(Configuration)\InstantMeshPlus.Worker.exe')">
     <Content Include="..\..\artifacts\native\$(Configuration)\worker\$(Configuration)\InstantMeshPlus.Worker.exe"
              Link="InstantMeshPlus.Worker.exe"

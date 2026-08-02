@@ -32,7 +32,7 @@ a Git submodule; it does not automate the upstream viewer.
 | **Position Constraint** | Project a point and anchor to the surface position field. |
 | **Field Curve Guide** | Sample a curve as an orientation guide, or as a combined orientation and edge-path guide. |
 | **Move Singularity** | Detect the nearest existing singularity and request movement along a projected curve. |
-| **Instant Mesh Plus** | Run the worker asynchronously and return mesh, full result, preview geometry, singularities, and diagnostics. |
+| **IM Solver** | Run the worker asynchronously and return mesh, full result, preview geometry, singularities, and diagnostics. |
 
 Constraint weights range from 0 to 1. Multiple constraints at the same region
 are blended after symmetry-compatible alignment. Points are projected to the
