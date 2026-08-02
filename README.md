@@ -127,8 +127,8 @@ Create a release payload and Yak package with Rhino 8's installed Yak CLI:
 Windows-only package is built as one `instantmeshplus-<version>-rh8_32-win.yak`
 archive under `artifacts\yak`; the Rhino floor is inferred from the project's
 RhinoCommon 8.32 reference. The package contains the Grasshopper assembly,
-managed core, native worker, manifest, and license notices without debug
-symbols.
+managed core, native worker, manifest, package icon, and license notices
+without debug symbols.
 
 Two guarded GitHub Actions workflows are configured but are not run by normal
 branch pushes:

@@ -4,6 +4,7 @@ authors:
   - InstantMeshPlus Contributors
 description: Constraint-aware orientation and position field control for Instant Meshes in Grasshopper.
 url: https://github.com/anthonychukh/InstantMeshPlus
+icon: icon.png
 keywords:
   - grasshopper
   - mesh

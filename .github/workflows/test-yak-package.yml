@@ -83,6 +83,7 @@ jobs:
             --expected-platform win `
             --expected-guid a8053c38-fdfa-4d99-bc31-b285e4bb59c5 `
             --required-entry manifest.yml `
+            --required-entry icon.png `
             --required-entry InstantMeshPlus.Grasshopper.gha `
             --required-entry InstantMeshPlus.Core.dll `
             --required-entry InstantMeshPlus.Worker.exe `

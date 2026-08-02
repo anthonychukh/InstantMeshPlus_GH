@@ -55,6 +55,11 @@ Copy-Item -LiteralPath (Join-Path $repository 'LICENSE') -Destination $resolvedP
 Copy-Item -LiteralPath (Join-Path $repository 'THIRD_PARTY_NOTICES.md') -Destination $resolvedPackageRoot
 Copy-Item -LiteralPath (Join-Path $repository 'third_party\instant-meshes\LICENSE.txt') -Destination (Join-Path $resolvedPackageRoot 'INSTANT_MESHES_LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path $repository 'third_party\GrasshopperAsyncComponent\LICENSE') -Destination (Join-Path $resolvedPackageRoot 'GRASSHOPPER_ASYNC_COMPONENT_LICENSE.txt')
+$packageIcon = Join-Path $repository 'yak\icon.png'
+if (-not (Test-Path -LiteralPath $packageIcon -PathType Leaf)) {
+    throw "Missing Yak package icon: $packageIcon"
+}
+Copy-Item -LiteralPath $packageIcon -Destination (Join-Path $resolvedPackageRoot 'icon.png')
 
 $manifestTemplate = Get-Content -Raw (Join-Path $repository 'yak\manifest.yml')
 $manifest = $manifestTemplate.Replace('__VERSION__', $Version)

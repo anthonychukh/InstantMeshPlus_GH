@@ -150,10 +150,12 @@ def main() -> int:
                     )
                     manifest_name = manifest_scalar(manifest_text, "name")
                     manifest_version = manifest_scalar(manifest_text, "version")
+                    manifest_icon = manifest_scalar(manifest_text, "icon")
                     report["manifest"] = {
                         "path": root_manifests[0],
                         "name": manifest_name,
                         "version": manifest_version,
+                        "icon": manifest_icon,
                     }
                     if re.search(r"(?i)(\$version\b|__[A-Z0-9_]+__)", manifest_text):
                         report["errors"].append("Manifest contains an unresolved placeholder")
@@ -168,6 +170,12 @@ def main() -> int:
                         report["errors"].append(
                             f"Manifest version {manifest_version!r} != filename version {version!r}"
                         )
+                    if manifest_icon:
+                        icon_entry = manifest_icon.replace("\\", "/").strip("/")
+                        if icon_entry.casefold() not in entry_set:
+                            report["errors"].append(
+                                f"Manifest icon {manifest_icon!r} is not present in the archive"
+                            )
                     if expected_guid and f"guid:{expected_guid}" not in manifest_text.casefold():
                         report["errors"].append(
                             f"Manifest does not contain guid:{args.expected_guid}"
