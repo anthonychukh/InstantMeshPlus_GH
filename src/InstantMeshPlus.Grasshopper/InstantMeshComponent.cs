@@ -15,7 +15,7 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
     public InstantMeshComponent()
         : base(
             "Instant Mesh Plus Solver",
-            "IM Solver",
+            "IM+ Solver",
             "Run constraint-aware Instant Meshes in a responsive, cancellable worker.",
             ComponentUtilities.Category,
             "Solve")
@@ -30,17 +30,15 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
     protected override void RegisterInputParams(GH_InputParamManager inputs)
     {
         inputs.AddMeshParameter("Mesh", "M", "Triangle or quad mesh to remesh.", GH_ParamAccess.item);
-        inputs.AddGenericParameter("Settings", "Settings", "Optional Instant Mesh Settings object.", GH_ParamAccess.item);
+        inputs.AddGenericParameter("Settings", "S", "Optional Instant Mesh Settings object.", GH_ParamAccess.item);
         inputs.AddGenericParameter("Orientation Constraints", "OC", "Orientation Constraint objects.", GH_ParamAccess.list);
-        inputs.AddGenericParameter("Position Constraints", "PC", "Position Constraint objects.", GH_ParamAccess.list);
-        inputs.AddGenericParameter("Curve Guides", "G", "Field Curve Guide objects.", GH_ParamAccess.list);
-        inputs.AddGenericParameter("Singularity Paths", "S", "Move Singularity path objects.", GH_ParamAccess.list);
+        inputs.AddGenericParameter("Position Constraints", "PC", "Position Field Constraint objects.", GH_ParamAccess.list);
+        inputs.AddGenericParameter("Curve Guides", "CG", "Field Curve Guide objects.", GH_ParamAccess.list);
+        inputs.AddGenericParameter("Singularity Paths", "SP", "Move Singularity path objects.", GH_ParamAccess.list);
         inputs.AddBooleanParameter("Run", "Run", "Run the worker. Set false while editing heavy definitions.", GH_ParamAccess.item, true);
-        inputs.AddIntegerParameter("Preview Stride", "Stride", "Display every nth field sample; 1 displays all.", GH_ParamAccess.item, 20);
-        inputs.AddTextParameter("Worker", "Worker", "Optional full path to InstantMeshPlus.Worker.exe.", GH_ParamAccess.item, string.Empty);
+        inputs.AddIntegerParameter("Preview Stride", "s", "Display every nth field sample; 1 displays all.", GH_ParamAccess.item, 20);
         for (var index = 1; index <= 5; index++)
             Params.Input[index].Optional = true;
-        Params.Input[8].Optional = true;
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager outputs)
@@ -95,7 +93,6 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
         var singularityValues = new List<object>();
         var run = true;
         var previewStride = 20;
-        var worker = string.Empty;
         if (!data.GetData(0, ref mesh) || mesh is null)
             return false;
         data.GetData(1, ref settingsValue);
@@ -105,7 +102,6 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
         data.GetDataList(5, singularityValues);
         data.GetData(6, ref run);
         data.GetData(7, ref previewStride);
-        data.GetData(8, ref worker);
 
         try
         {
@@ -121,8 +117,7 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
                 ComponentUtilities.UnwrapMany<CurveGuide>(guideValues),
                 ComponentUtilities.UnwrapMany<SingularityPath>(singularityValues),
                 run,
-                Math.Max(1, previewStride),
-                string.IsNullOrWhiteSpace(worker) ? null : worker);
+                Math.Max(1, previewStride));
             return true;
         }
         catch (Exception error)
@@ -210,8 +205,7 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
         IReadOnlyList<CurveGuide> Guides,
         IReadOnlyList<SingularityPath> SingularityPaths,
         bool Run,
-        int PreviewStride,
-        string? WorkerPath);
+        int PreviewStride);
 
     private sealed record SolvePresentation(
         Mesh Mesh,
@@ -272,9 +266,8 @@ public sealed class InstantMeshComponent : GH_AsyncComponent<InstantMeshComponen
                 var request = BuildRequest(_input);
                 _result = await new WorkerRunner().RunAsync(
                     request,
-                    new WorkerOptions { ExecutablePath = _input.WorkerPath },
-                    progress,
-                    CancellationToken).ConfigureAwait(false);
+                    progress: progress,
+                    cancellationToken: CancellationToken).ConfigureAwait(false);
                 CancellationToken.ThrowIfCancellationRequested();
                 _presentation = BuildPresentation(_result, _input.PreviewStride);
                 reportProgress(Id, 1);

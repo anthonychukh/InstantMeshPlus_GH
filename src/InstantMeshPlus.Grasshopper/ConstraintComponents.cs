@@ -28,7 +28,7 @@ public sealed class OrientationConstraintComponent : GH_Component
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager outputs) =>
-        outputs.AddGenericParameter("Constraint", "C", "Orientation field constraint.", GH_ParamAccess.item);
+        outputs.AddGenericParameter("Orientation Constraints", "OC", "Orientation field constraint.", GH_ParamAccess.item);
 
     protected override void SolveInstance(IGH_DataAccess data)
     {
@@ -72,7 +72,7 @@ public sealed class PositionConstraintComponent : GH_Component
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager outputs) =>
-        outputs.AddGenericParameter("Constraint", "C", "Position field constraint.", GH_ParamAccess.item);
+        outputs.AddGenericParameter("Position Constraints", "PC", "Position field constraint.", GH_ParamAccess.item);
 
     protected override void SolveInstance(IGH_DataAccess data)
     {
@@ -117,7 +117,7 @@ public sealed class CurveGuideComponent : GH_Component
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager outputs) =>
-        outputs.AddGenericParameter("Guide", "G", "Sampled curve field guide.", GH_ParamAccess.item);
+        outputs.AddGenericParameter("Curve Guides", "CG", "Sampled Field Curve Guide object.", GH_ParamAccess.item);
 
     protected override void SolveInstance(IGH_DataAccess data)
     {
@@ -176,7 +176,7 @@ public sealed class SingularityPathComponent : GH_Component
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager outputs) =>
-        outputs.AddGenericParameter("Singularity Path", "Path", "Detected-singularity movement request.", GH_ParamAccess.item);
+        outputs.AddGenericParameter("Singularity Path", "SP", "Detected-singularity movement object.", GH_ParamAccess.item);
 
     protected override void SolveInstance(IGH_DataAccess data)
     {

@@ -8,8 +8,8 @@ public sealed class SettingsComponent : GH_Component
 {
     public SettingsComponent()
         : base(
-            "Instant Mesh Settings",
-            "IM Settings",
+            "Instant Mesh Plus Settings",
+            "IM+ Settings",
             "Configure target density, field symmetry, alignment, extraction, and reproducibility.",
             ComponentUtilities.Category,
             "Solve")
@@ -38,7 +38,7 @@ public sealed class SettingsComponent : GH_Component
 
     protected override void RegisterOutputParams(GH_OutputParamManager outputs)
     {
-        outputs.AddGenericParameter("Settings", "Settings", "Instant Mesh+ solver settings.", GH_ParamAccess.item);
+        outputs.AddGenericParameter("Settings", "S", "Instant Mesh+ solver settings.", GH_ParamAccess.item);
     }
 
     protected override void SolveInstance(IGH_DataAccess data)
