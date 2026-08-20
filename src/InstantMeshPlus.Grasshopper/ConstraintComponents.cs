@@ -93,9 +93,10 @@ public sealed class PositionConstraintComponent : GH_Component
     }
 }
 
-public sealed class CurveGuideComponent : GH_Component
+[Obsolete("Use the deviation-tolerance Field Curve Guide component instead.")]
+public sealed class CurveGuideComponent_OBSOLETE : GH_Component
 {
-    public CurveGuideComponent()
+    public CurveGuideComponent_OBSOLETE()
         : base(
             "Field Curve Guide",
             "Field Guide",
@@ -106,6 +107,7 @@ public sealed class CurveGuideComponent : GH_Component
     }
 
     public override Guid ComponentGuid => new("70868901-D73A-49D0-B098-C975D1D6387A");
+    public override GH_Exposure Exposure => GH_Exposure.hidden;
     protected override Bitmap Icon => ComponentIcons.CurveGuide;
 
     protected override void RegisterInputParams(GH_InputParamManager inputs)
@@ -142,7 +144,7 @@ public sealed class CurveGuideComponent : GH_Component
             if (!double.IsFinite(weight) || weight is < 0 or > 1)
                 throw new ArgumentOutOfRangeException(nameof(weight), "Weight must be between 0 and 1.");
             data.SetData(0, new CurveGuide(
-                ComponentUtilities.SampleCurve(curve, samples),
+                ComponentUtilities.SampleCurveByCount(curve, samples),
                 guideMode,
                 (float)weight));
         }
@@ -150,6 +152,105 @@ public sealed class CurveGuideComponent : GH_Component
         {
             AddRuntimeMessage(GH_RuntimeMessageLevel.Error, error.Message);
         }
+    }
+}
+
+public sealed class CurveGuideByDeviationComponent : GH_Component
+{
+    private readonly List<Point3d[]> _previewPolylines = [];
+
+    public CurveGuideByDeviationComponent()
+        : base(
+            "Field Curve Guide",
+            "Field Guide",
+            "Use a curve as an orientation guide or an orientation-plus-edge-path guide.",
+            ComponentUtilities.Category,
+            "Fields")
+    {
+    }
+
+    public override Guid ComponentGuid => new("5B2B0D4D-A102-4488-8F7E-FA7D8E119669");
+    public override BoundingBox ClippingBox
+    {
+        get
+        {
+            var clippingBox = base.ClippingBox;
+            foreach (var polyline in _previewPolylines)
+            {
+                foreach (var point in polyline)
+                    clippingBox.Union(point);
+            }
+            return clippingBox;
+        }
+    }
+
+    protected override Bitmap Icon => ComponentIcons.CurveGuide;
+
+    protected override void BeforeSolveInstance()
+    {
+        _previewPolylines.Clear();
+        base.BeforeSolveInstance();
+    }
+
+    protected override void RegisterInputParams(GH_InputParamManager inputs)
+    {
+        inputs.AddCurveParameter("Curve", "C", "Guide curve near the input mesh.", GH_ParamAccess.item);
+        inputs.AddIntegerParameter("Mode", "Mode", "0 = orientation only, 1 = orientation and position edge path.", GH_ParamAccess.item, 0);
+        inputs.AddNumberParameter("Weight", "W", "Constraint weight from 0 to 1.", GH_ParamAccess.item, 1);
+        inputs.AddNumberParameter(
+            "Deviation Tolerance",
+            "Tol",
+            "Maximum model-unit deviation between the guide curve and its sampled polyline.",
+            GH_ParamAccess.item,
+            0.01);
+    }
+
+    protected override void RegisterOutputParams(GH_OutputParamManager outputs) =>
+        outputs.AddGenericParameter("Curve Guides", "CG", "Deviation-sampled Field Curve Guide object.", GH_ParamAccess.item);
+
+    protected override void SolveInstance(IGH_DataAccess data)
+    {
+        Curve? curve = null;
+        var mode = 0;
+        var weight = 1.0;
+        var deviationTolerance = 0.01;
+        if (!data.GetData(0, ref curve) ||
+            !data.GetData(1, ref mode) ||
+            !data.GetData(2, ref weight) ||
+            !data.GetData(3, ref deviationTolerance) ||
+            curve is null)
+            return;
+        try
+        {
+            var guideMode = mode switch
+            {
+                0 => GuideMode.Orientation,
+                1 => GuideMode.EdgePath,
+                _ => throw new ArgumentOutOfRangeException(nameof(mode), "Guide mode must be 0 or 1.")
+            };
+            if (!double.IsFinite(weight) || weight is < 0 or > 1)
+                throw new ArgumentOutOfRangeException(nameof(weight), "Weight must be between 0 and 1.");
+            var sampledPoints = ComponentUtilities.SampleCurveByDeviation(curve, deviationTolerance);
+            _previewPolylines.Add(sampledPoints.Select(ComponentUtilities.ToPoint).ToArray());
+            data.SetData(0, new CurveGuide(
+                sampledPoints,
+                guideMode,
+                (float)weight));
+        }
+        catch (Exception error)
+        {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error, error.Message);
+        }
+    }
+
+    public override void DrawViewportWires(IGH_PreviewArgs args)
+    {
+        base.DrawViewportWires(args);
+        var colour = Attributes.Selected
+            ? args.WireColour_Selected
+            : args.WireColour;
+        foreach (var polyline in _previewPolylines)
+            args.Display.DrawPolyline(polyline, colour, args.DefaultCurveThickness);
     }
 }
 
@@ -197,7 +298,7 @@ public sealed class SingularityPathComponent : GH_Component
                 _ => throw new ArgumentOutOfRangeException(nameof(field), "Field must be 0 or 1.")
             };
             data.SetData(0, new SingularityPath(
-                ComponentUtilities.SampleCurve(curve, samples),
+                ComponentUtilities.SampleCurveByCount(curve, samples),
                 fieldKind));
         }
         catch (Exception error)

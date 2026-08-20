@@ -1,13 +1,30 @@
 name: instantmeshplus
 version: __VERSION__
 authors:
-  - InstantMeshPlus Contributors
-description: Constraint-aware orientation and position field control for Instant Meshes in Grasshopper.
+  - anthonychukh
+description: >
+  Instant Mesh Plus is a Rhino 8 Grasshopper plug-in for constraint-guided
+  quad and triangle remeshing and retopology using Instant Meshes,
+  field controls, and curve guides.
 url: https://github.com/anthonychukh/InstantMeshPlus
 icon: icon.png
 keywords:
+  - instant mesh
+  - instant meshes
   - grasshopper
+  - rhino 8
   - mesh
   - remesh
+  - remeshing
+  - retopology
+  - mesh retopology
+  - quad remesh
+  - quad remeshing
+  - quad mesh
+  - triangle remeshing
+  - field aligned remeshing
   - field
+  - orientation field
+  - position field
+  - curve guides
   - quad

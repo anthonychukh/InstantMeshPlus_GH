@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src/InstantMeshPlus.Grasshopper/Resources/Branding/instant-mesh-plus-grasshopper-logo-v1_transparent.png" alt="Instant Mesh+ logo" width="320">
+</p>
+
 # Instant Mesh+
 
 Instant Mesh+ is a Rhino 8 / Grasshopper wrapper around
@@ -14,6 +18,15 @@ The v0.1 workflow is:
 4. Receive the remesh, full field samples, detected singularities, warnings,
    timings, and lightweight Grasshopper previews.
 
+## Example results
+
+A guided solve shown from the input triangle mesh through field optimization
+to the extracted quad mesh.
+
+| Input mesh and guide curve | Optimized orientation field | Extracted quad mesh |
+| :---: | :---: | :---: |
+| <img src="src/InstantMeshPlus.Grasshopper/Resources/Branding/ViewCapture20260803_215955.png" alt="Input triangle mesh with a guide curve" width="300"> | <img src="src/InstantMeshPlus.Grasshopper/Resources/Branding/ViewCapture20260803_220119.png" alt="Optimized orientation field following the guide curve" width="300"> | <img src="src/InstantMeshPlus.Grasshopper/Resources/Branding/ViewCapture20260803_220030.png" alt="Extracted quad mesh following the guide curve" width="300"> |
+
 ## Components
 
 | Component | Purpose |
@@ -21,7 +34,7 @@ The v0.1 workflow is:
 | **Instant Mesh Settings** | Target by faces, vertices, or model-unit edge length; set RoSy/PoSy, intrinsic/extrinsic mode, feature behavior, extraction, and reproducibility. |
 | **Orientation Constraint** | Project a point and preferred tangent vector to the surface orientation field. |
 | **Position Constraint** | Project a point and anchor to the surface position field. |
-| **Field Curve Guide** | Sample a curve as an orientation guide, or as a combined orientation and edge-path guide. |
+| **Field Curve Guide** | Approximate a curve within a model-unit deviation tolerance, then use it as an orientation guide or a combined orientation and edge-path guide. |
 | **Move Singularity** | Detect the nearest existing singularity and request movement along a projected curve. |
 | **IM Solver** | Run the worker asynchronously by default, or uncheck **Solve asynchronously** in the component menu for a synchronous UI-thread solve. The selected mode is saved with the Grasshopper definition. |
 

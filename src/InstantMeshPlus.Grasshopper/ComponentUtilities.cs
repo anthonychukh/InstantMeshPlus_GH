@@ -70,7 +70,7 @@ internal static class ComponentUtilities
         return mesh;
     }
 
-    public static IReadOnlyList<Vector3> SampleCurve(Curve curve, int sampleCount)
+    public static IReadOnlyList<Vector3> SampleCurveByCount(Curve curve, int sampleCount)
     {
         if (curve.TryGetPolyline(out var polyline) && polyline.Count >= 2)
             return polyline.Select(ToVector).ToArray();
@@ -80,6 +80,34 @@ internal static class ComponentUtilities
         if (parameters is null || parameters.Length < 2)
             throw new ArgumentException("The curve could not be sampled.");
         return parameters.Select(parameter => ToVector(curve.PointAt(parameter))).ToArray();
+    }
+
+    public static IReadOnlyList<Vector3> SampleCurveByDeviation(Curve curve, double deviationTolerance)
+    {
+        if (!curve.IsValid)
+            throw new ArgumentException("Supply a valid guide curve.", nameof(curve));
+        if (!double.IsFinite(deviationTolerance) || deviationTolerance <= 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(deviationTolerance),
+                "Deviation tolerance must be a finite number greater than zero.");
+        if (curve.TryGetPolyline(out var existingPolyline) && existingPolyline.Count >= 2)
+            return existingPolyline.Select(ToVector).ToArray();
+
+        using var polylineCurve = curve.ToPolyline(
+            mainSegmentCount: 0,
+            subSegmentCount: 0,
+            maxAngleRadians: 0,
+            maxChordLengthRatio: 0,
+            maxAspectRatio: 0,
+            tolerance: deviationTolerance,
+            minEdgeLength: 0,
+            maxEdgeLength: 0,
+            keepStartPoint: true);
+        if (polylineCurve is null ||
+            !polylineCurve.TryGetPolyline(out var sampledPolyline) ||
+            sampledPolyline.Count < 2)
+            throw new ArgumentException("The curve could not be sampled within the deviation tolerance.");
+        return sampledPolyline.Select(ToVector).ToArray();
     }
 
     public static Vector3 ToVector(Point3d point) =>
