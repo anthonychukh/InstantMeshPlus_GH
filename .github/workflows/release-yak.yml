@@ -132,6 +132,20 @@ jobs:
             --required-entry InstantMeshPlus.Grasshopper.gha `
             --required-entry InstantMeshPlus.Core.dll `
             --required-entry InstantMeshPlus.Worker.exe `
+            --required-entry LICENSE `
+            --required-entry THIRD_PARTY_NOTICES.md `
+            --required-entry INSTANT_MESHES_LICENSE.txt `
+            --required-entry NLOHMANN_JSON_LICENSE.txt `
+            --required-entry TBB_LICENSE.txt `
+            --required-entry APACHE-2.0_LICENSE.txt `
+            --required-entry PCG32_NOTICE.txt `
+            --required-entry PSS_LICENSE.txt `
+            --required-entry DSET_LICENSE.txt `
+            --required-entry EIGEN_COPYING_MPL2.txt `
+            --required-entry EIGEN_COPYING_README.txt `
+            --required-entry EIGEN_COPYING_BSD.txt `
+            --required-entry EIGEN_COPYING_MINPACK.txt `
+            --required-entry GRASSHOPPER_ASYNC_COMPONENT_LICENSE.txt `
             --write-list .\artifacts\yak\validated-archives.txt
 
       - name: Create draft GitHub release

@@ -29,6 +29,7 @@ add_library(instant_meshes_core STATIC
 
 target_compile_features(instant_meshes_core PUBLIC cxx_std_14)
 target_compile_definitions(instant_meshes_core PUBLIC
+  EIGEN_MPL2_ONLY
   _CRT_SECURE_NO_WARNINGS
   __TBB_NO_IMPLICIT_LINKAGE)
 target_include_directories(instant_meshes_core PUBLIC

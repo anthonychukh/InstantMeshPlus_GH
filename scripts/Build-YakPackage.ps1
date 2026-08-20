@@ -53,8 +53,27 @@ New-Item -ItemType Directory -Path $resolvedPackageRoot -Force | Out-Null
 }
 Copy-Item -LiteralPath (Join-Path $repository 'LICENSE') -Destination $resolvedPackageRoot
 Copy-Item -LiteralPath (Join-Path $repository 'THIRD_PARTY_NOTICES.md') -Destination $resolvedPackageRoot
-Copy-Item -LiteralPath (Join-Path $repository 'third_party\instant-meshes\LICENSE.txt') -Destination (Join-Path $resolvedPackageRoot 'INSTANT_MESHES_LICENSE.txt')
-Copy-Item -LiteralPath (Join-Path $repository 'third_party\GrasshopperAsyncComponent\LICENSE') -Destination (Join-Path $resolvedPackageRoot 'GRASSHOPPER_ASYNC_COMPONENT_LICENSE.txt')
+$thirdPartyFiles = @(
+    @{ Source = 'third_party\instant-meshes\LICENSE.txt'; Destination = 'INSTANT_MESHES_LICENSE.txt' }
+    @{ Source = 'third_party\json\LICENSE.MIT'; Destination = 'NLOHMANN_JSON_LICENSE.txt' }
+    @{ Source = 'third_party\instant-meshes\ext\tbb\LICENSE'; Destination = 'TBB_LICENSE.txt' }
+    @{ Source = 'third_party\GrasshopperAsyncComponent\LICENSE'; Destination = 'APACHE-2.0_LICENSE.txt' }
+    @{ Source = 'licenses\PCG32_NOTICE.txt'; Destination = 'PCG32_NOTICE.txt' }
+    @{ Source = 'third_party\instant-meshes\ext\pss\LICENSE.txt'; Destination = 'PSS_LICENSE.txt' }
+    @{ Source = 'third_party\instant-meshes\ext\dset\LICENSE.txt'; Destination = 'DSET_LICENSE.txt' }
+    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.MPL2'; Destination = 'EIGEN_COPYING_MPL2.txt' }
+    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.README'; Destination = 'EIGEN_COPYING_README.txt' }
+    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.BSD'; Destination = 'EIGEN_COPYING_BSD.txt' }
+    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.MINPACK'; Destination = 'EIGEN_COPYING_MINPACK.txt' }
+    @{ Source = 'third_party\GrasshopperAsyncComponent\LICENSE'; Destination = 'GRASSHOPPER_ASYNC_COMPONENT_LICENSE.txt' }
+)
+foreach ($entry in $thirdPartyFiles) {
+    $licenseSource = Join-Path $repository $entry.Source
+    if (-not (Test-Path -LiteralPath $licenseSource -PathType Leaf)) {
+        throw "Missing third-party license file: $licenseSource"
+    }
+    Copy-Item -LiteralPath $licenseSource -Destination (Join-Path $resolvedPackageRoot $entry.Destination)
+}
 $packageIcon = Join-Path $repository 'yak\icon.png'
 if (-not (Test-Path -LiteralPath $packageIcon -PathType Leaf)) {
     throw "Missing Yak package icon: $packageIcon"
