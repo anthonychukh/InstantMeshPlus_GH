@@ -9,8 +9,8 @@ The v0.1 workflow is:
 
 1. Author field constraints from Grasshopper points, vectors, and curves.
 2. Configure the Instant Meshes field symmetry and extraction settings.
-3. Solve through a responsive Grasshopper async component and a cancellable
-   native worker process.
+3. Solve through a cancellable native worker process, asynchronously by
+   default or synchronously when selected from the solver's component menu.
 4. Receive the remesh, full field samples, detected singularities, warnings,
    timings, and lightweight Grasshopper previews.
 
@@ -23,7 +23,7 @@ The v0.1 workflow is:
 | **Position Constraint** | Project a point and anchor to the surface position field. |
 | **Field Curve Guide** | Sample a curve as an orientation guide, or as a combined orientation and edge-path guide. |
 | **Move Singularity** | Detect the nearest existing singularity and request movement along a projected curve. |
-| **IM Solver** | Run the worker asynchronously and return mesh, full result, preview geometry, singularities, and diagnostics. |
+| **IM Solver** | Run the worker asynchronously by default, or uncheck **Solve asynchronously** in the component menu for a synchronous UI-thread solve. The selected mode is saved with the Grasshopper definition. |
 
 Constraint weights range from 0 to 1. Multiple constraints at the same region
 are blended after symmetry-compatible alignment. Points are projected to the
@@ -117,18 +117,23 @@ $env:RHINO_PACKAGE_DIRS = (Resolve-Path .\src\InstantMeshPlus.Grasshopper\bin\De
 
 ## Packaging
 
-Create a release payload and Yak package with Rhino 8's installed Yak CLI:
+For each release, first increment `<VersionPrefix>` in
+[`Directory.Build.props`](Directory.Build.props) using a three-part semantic
+version such as `0.1.2`. This is the authoritative version for the compiled
+assemblies and Yak package; the packaging script rejects a different
+`-Version`, and any `release_vX.Y.Z` tag must match it exactly.
+
+Then create a release payload and Yak package with Rhino 8's installed Yak CLI:
 
 ```powershell
-.\scripts\Build-YakPackage.ps1 -Version 0.1.0
+.\scripts\Build-YakPackage.ps1 -Version 0.1.2
 ```
 
-`Directory.Build.props` is the authoritative package version. The current
-Windows-only package is built as one `instantmeshplus-<version>-rh8_32-win.yak`
-archive under `artifacts\yak`; the Rhino floor is inferred from the project's
-RhinoCommon 8.32 reference. The package contains the Grasshopper assembly,
-managed core, native worker, manifest, package icon, and license notices
-without debug symbols.
+The current Windows-only package is built as one
+`instantmeshplus-<version>-rh8_32-win.yak` archive under `artifacts\yak`; the
+Rhino floor is inferred from the project's RhinoCommon 8.32 reference. The
+package contains the Grasshopper assembly, managed core, native worker,
+manifest, package icon, and license notices without debug symbols.
 
 Two guarded GitHub Actions workflows are configured but are not run by normal
 branch pushes:
@@ -155,8 +160,8 @@ After the manual test workflow succeeds and the intended release commit is on
 `main`, the public trigger format is:
 
 ```powershell
-git tag release_v0.1.0
-git push origin release_v0.1.0
+git tag release_v0.1.2
+git push origin release_v0.1.2
 ```
 
 Do not push the tag until a public release is intended. See

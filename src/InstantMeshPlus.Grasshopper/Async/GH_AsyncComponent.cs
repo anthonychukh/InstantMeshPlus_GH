@@ -5,7 +5,9 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Windows.Forms;
 using Grasshopper.Kernel;
+using GH_IO.Serialization;
 using Timer = System.Timers.Timer;
 
 namespace GrasshopperAsyncComponent;
@@ -54,6 +56,7 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
     private int _setData;
     private int _generation;
     private bool _isDisposed;
+    private bool _runAsynchronously = true;
 
     protected GH_AsyncComponent(
         string name,
@@ -101,6 +104,8 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
 
     public TaskCreationOptions TaskCreationOptions { get; set; } = TaskCreationOptions.None;
 
+    public bool RunAsynchronously => _runAsynchronously;
+
     public override TimeSpan ProcessorTime
     {
         get
@@ -117,6 +122,32 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
     protected virtual string FormatProgress(double progress) => progress.ToString("0%");
 
     protected virtual void OnWorkersCompleted() => Message = "Done";
+
+    protected override void AppendAdditionalComponentMenuItems(ToolStripDropDown menu)
+    {
+        base.AppendAdditionalComponentMenuItems(menu);
+        Menu_AppendSeparator(menu);
+        var item = Menu_AppendItem(
+            menu,
+            "Solve asynchronously",
+            ToggleSolveMode,
+            enabled: true,
+            @checked: _runAsynchronously);
+        item.ToolTipText = "Uncheck to run the solve synchronously on the Rhino UI thread.";
+    }
+
+    public override bool Write(GH_IWriter writer)
+    {
+        writer.SetBoolean("RunAsynchronously", _runAsynchronously);
+        return base.Write(writer);
+    }
+
+    public override bool Read(GH_IReader reader)
+    {
+        _runAsynchronously = !reader.ItemExists("RunAsynchronously") ||
+                             reader.GetBoolean("RunAsynchronously");
+        return base.Read(reader);
+    }
 
     public virtual void DisplayProgress(object? sender, System.Timers.ElapsedEventArgs e)
     {
@@ -163,6 +194,13 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
 
     protected override void AfterSolveInstance()
     {
+        if (!_runAsynchronously)
+        {
+            lock (_stateGate)
+                CompleteComputationClockLocked();
+            return;
+        }
+
         Worker<T>[] workers;
         lock (_stateGate)
         {
@@ -187,6 +225,12 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
 
     protected override void SolveInstance(IGH_DataAccess access)
     {
+        if (!_runAsynchronously)
+        {
+            SolveSynchronously(access);
+            return;
+        }
+
         WorkerInstance<T>? workerToPublish = null;
         var finalWorker = false;
         lock (_stateGate)
@@ -246,6 +290,34 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
         OnDisplayExpired(true);
     }
 
+    private void SolveSynchronously(IGH_DataAccess access)
+    {
+        if (BaseWorker is null)
+        {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Worker class not provided.");
+            return;
+        }
+
+        using var cancellationSource = new CancellationTokenSource();
+        var currentWorker = BaseWorker.Duplicate(
+            $"Worker-{access.Iteration}",
+            cancellationSource.Token);
+        currentWorker.GetData(access, Params);
+        try
+        {
+            currentWorker.DoWork(
+                    (_, _) => { },
+                    () => { })
+                .GetAwaiter()
+                .GetResult();
+            currentWorker.SetData(access);
+        }
+        catch (Exception error)
+        {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error, error.Message);
+        }
+    }
+
     public void RequestCancellation()
     {
         lock (_stateGate)
@@ -262,6 +334,14 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
 
         Message = "Cancelled";
         OnDisplayExpired(true);
+    }
+
+    private void ToggleSolveMode(object? sender, EventArgs e)
+    {
+        RecordUndoEvent("Toggle solve mode");
+        RequestCancellation();
+        _runAsynchronously = !_runAsynchronously;
+        ExpireSolution(true);
     }
 
     public void Dispose()
