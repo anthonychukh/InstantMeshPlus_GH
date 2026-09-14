@@ -4,13 +4,13 @@
 
 #include <array>
 #include <cstring>
-#include <experimental/filesystem>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
 
-namespace fs = std::experimental::filesystem;
+namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 namespace imp {

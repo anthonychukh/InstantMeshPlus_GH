@@ -19,7 +19,8 @@ InstantMeshPlus.Core
   request.json + request.impbin
         |
         v
-InstantMeshPlus.Worker.exe
+InstantMeshPlus.Worker
+  .exe on Windows / extensionless on macOS
   pinned Instant Meshes solver
         |
         v
@@ -58,7 +59,17 @@ owns the child process and kills its process tree on cancellation or timeout.
     timings.
 
 The upstream source is linked into the worker only. Rhino SDK types never
-cross the native boundary.
+cross the native boundary. The build keeps the pinned Instant Meshes submodule
+unchanged and creates deterministic build-tree overlays for the legacy TBB
+call sites. Both platforms use pinned oneTBB 2023.1.0. The Windows package
+ships `tbb12.dll`; the macOS package ships a universal
+`libtbb.12.dylib` and resolves it through `@loader_path`.
+
+The macOS worker and oneTBB runtime are compiled independently for `arm64` and
+`x86_64`, combined with `lipo`, and checked on native GitHub runners for both
+architectures. Apple Developer ID signing and notarization can be enabled for
+release hardening, but neither is required to compile, test, or package the
+plug-in.
 
 ## Constraint semantics
 

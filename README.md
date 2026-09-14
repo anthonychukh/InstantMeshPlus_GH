@@ -84,11 +84,12 @@ Good follow-on features supported by the upstream codebase but not yet exposed:
 
 Requirements:
 
-- Windows x64;
 - Rhino 8;
-- Visual Studio 2022 with Desktop development with C++;
 - CMake 3.25 or newer;
-- .NET 8 SDK.
+- .NET 8 SDK;
+- on Windows x64, Visual Studio 2022 with Desktop development with C++;
+- on macOS 12.4 or newer, Xcode Command Line Tools. Both Apple Silicon and
+  Intel Macs are supported through one universal worker.
 
 Clone with submodules:
 
@@ -103,78 +104,104 @@ If the repository was cloned without them:
 git submodule update --init --recursive
 ```
 
-Build and test:
+Build and test on Windows:
 
 ```powershell
 .\scripts\build.ps1 -Configuration Debug
 ```
 
-The Grasshopper load directory is:
+Build and test on macOS:
+
+```bash
+bash scripts/build-macos.sh Debug
+```
+
+The Grasshopper load directory on both platforms is:
 
 ```text
-src\InstantMeshPlus.Grasshopper\bin\Debug\net8.0-windows
+src/InstantMeshPlus.Grasshopper/bin/Debug/net8.0
 ```
 
 That directory contains `InstantMeshPlus.Grasshopper.gha`,
-`InstantMeshPlus.Core.dll`, and `InstantMeshPlus.Worker.exe`. The committed
-Visual Studio launch profile binds this current output through
+`InstantMeshPlus.Core.dll`, and the platform-native worker plus oneTBB runtime:
+`InstantMeshPlus.Worker.exe` / `tbb12.dll` on Windows, or
+`InstantMeshPlus.Worker` / `libtbb.12.dylib` on macOS. The committed Visual
+Studio launch profile binds this current output through
 `RHINO_PACKAGE_DIRS`, starts Rhino MCP, and opens Grasshopper. It does not copy
 development files into `%APPDATA%\Grasshopper\Libraries`.
 
 For a manual Rhino launch:
 
 ```powershell
-$env:RHINO_PACKAGE_DIRS = (Resolve-Path .\src\InstantMeshPlus.Grasshopper\bin\Debug\net8.0-windows).Path
+$env:RHINO_PACKAGE_DIRS = (Resolve-Path .\src\InstantMeshPlus.Grasshopper\bin\Debug\net8.0).Path
 & 'C:\Program Files\Rhino 8\System\Rhino.exe' /nosplash /netcore '/runscript="! _mcpstart _Enter _Grasshopper"'
 ```
+
+For macOS build details and first-run notes, see
+[docs/MACOS.md](docs/MACOS.md).
 
 ## Packaging
 
 For each release, first increment `<VersionPrefix>` in
 [`Directory.Build.props`](Directory.Build.props) using a three-part semantic
-version such as `0.1.2`. This is the authoritative version for the compiled
+version such as `0.1.3`. This is the authoritative version for the compiled
 assemblies and Yak package; the packaging script rejects a different
 `-Version`, and any `release_vX.Y.Z` tag must match it exactly.
 
-Then create a release payload and Yak package with Rhino 8's installed Yak CLI:
+Create the platform package on its matching operating system with Rhino 8's
+installed Yak CLI or McNeel's standalone Yak 0.13.0 executable:
 
 ```powershell
-.\scripts\Build-YakPackage.ps1 -Version 0.1.2
+.\scripts\Build-YakPackage.ps1 -Version 0.1.3 -Platform win
+./scripts/Build-YakPackage.ps1 -Version 0.1.3 -Platform mac
 ```
 
-The current Windows-only package is built as one
-`instantmeshplus-<version>-rh8_32-win.yak` archive under `artifacts\yak`; the
-Rhino floor is inferred from the project's RhinoCommon 8.32 reference. The
-package contains the Grasshopper assembly, managed core, native worker,
-manifest, package icon, and license notices without debug symbols.
+The results are
+`instantmeshplus-<version>-rh8_32-win.yak` and
+`instantmeshplus-<version>-rh8_32-mac.yak` under the matching
+`artifacts/yak/<platform>` directory. The Rhino floor is inferred from the
+project's RhinoCommon 8.32 reference. Each archive contains the common managed
+payload plus only its own native worker and oneTBB runtime, with no debug
+symbols.
 
-Two guarded GitHub Actions workflows are configured but are not run by normal
-branch pushes:
+Three GitHub Actions workflows are configured. Only the non-publishing build
+workflow runs on normal branch pushes:
 
-- **Test Yak package** is manual. It builds and validates the same release
-  archive, uploads it as a workflow artifact, pushes it to McNeel's test
-  server, and confirms the exact version by search. The test server is an
-  external write and is cleared nightly.
+- **Build and validate** runs for branch pushes and pull requests. It builds
+  both packages, executes the universal Mac worker on Apple Silicon and Intel
+  runners, validates the exact two-archive set, and uploads artifacts. It does
+  not publish.
+- **Test Yak package** is manual. It consumes the same validated pair, pushes
+  both to McNeel's test server, and confirms the exact version by search. The
+  test server is an external write and is cleared nightly.
 - **Release Yak package** runs only when a tag matching `release_vX.Y.Z` is
   pushed. It requires an exact tag/version match, a commit contained in
   `main`, an unused GitHub release tag, and an unpublished public Yak version.
-  It creates a draft GitHub release before the Yak push and publishes that
-  release only after the public Yak search confirms the version.
+  It creates a draft GitHub release containing both archives before the Yak
+  pushes and publishes that release only after the public Yak search confirms
+  the version.
 
-Both workflows use the pinned standalone Yak 0.13.0 download documented by
-McNeel and require an environment secret named `YAK_TOKEN` in the
-`yak-production` environment. Configure that environment to allow the `main`
-branch and selected tags matching `release_v*.*.*`; add a required reviewer
-when a manual release approval is desired. Generate the CI token locally with
-`yak login --ci`, then store only its value in the environment secret; never
-commit or print it. No signing or obfuscation secrets are currently required.
+The workflows use the pinned standalone Yak 0.13.0 downloads documented by
+McNeel. The manual workflow expects `YAK_TOKEN` in a `yak-test` environment;
+the public workflow expects it in a protected `yak-production` environment.
+Generate the CI token locally with `yak login --ci`, then store only its value
+in the environment secret; never commit or print it. Restrict
+`yak-production` to the `main` branch and `release_v*.*.*` tags, and add a
+required reviewer if public publication should require human approval.
+
+Apple certification is not required for building, testing, or producing an
+unsigned Mac Yak package. Developer ID signing and notarization are optional
+release hardening. When desired, set `ENABLE_MACOS_SIGNING=true` and configure
+the six Apple secrets documented in [docs/MACOS.md](docs/MACOS.md). Leaving
+that variable absent or false keeps Apple credentials out of the critical
+build and release path.
 
 After the manual test workflow succeeds and the intended release commit is on
 `main`, the public trigger format is:
 
 ```powershell
-git tag release_v0.1.2
-git push origin release_v0.1.2
+git tag release_v0.1.3
+git push origin release_v0.1.3
 ```
 
 Do not push the tag until a public release is intended. See

@@ -5,8 +5,6 @@
 #include <iostream>
 #include <string>
 
-int nprocs = -1;
-
 namespace {
 
 std::string requestPath(int argc, char **argv) {

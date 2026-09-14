@@ -140,10 +140,16 @@ public sealed class WorkerRunner
 
 public static class WorkerLocator
 {
+    // Kept for source compatibility with existing Windows callers.
     public const string ExecutableName = "InstantMeshPlus.Worker.exe";
+    internal static string PlatformExecutableName => ExecutableNameFor(OperatingSystem.IsWindows());
+
+    internal static string ExecutableNameFor(bool isWindows) =>
+        isWindows ? ExecutableName : "InstantMeshPlus.Worker";
 
     public static string Resolve(string? explicitPath = null)
     {
+        var executableName = PlatformExecutableName;
         var assemblyDirectory = Path.GetDirectoryName(typeof(WorkerLocator).Assembly.Location);
         var candidates = new[]
         {
@@ -151,8 +157,8 @@ public static class WorkerLocator
             Environment.GetEnvironmentVariable("INSTANT_MESH_PLUS_WORKER"),
             string.IsNullOrWhiteSpace(assemblyDirectory)
                 ? null
-                : Path.Combine(assemblyDirectory, ExecutableName),
-            Path.Combine(AppContext.BaseDirectory, ExecutableName)
+                : Path.Combine(assemblyDirectory, executableName),
+            Path.Combine(AppContext.BaseDirectory, executableName)
         };
         foreach (var candidate in candidates.Where(c => !string.IsNullOrWhiteSpace(c)))
         {
@@ -161,6 +167,6 @@ public static class WorkerLocator
                 return fullPath;
         }
         throw new FileNotFoundException(
-            $"Could not locate {ExecutableName}. Place it beside the plugin, set INSTANT_MESH_PLUS_WORKER, or provide WorkerOptions.ExecutablePath.");
+            $"Could not locate {executableName}. Place it beside the plugin, set INSTANT_MESH_PLUS_WORKER, or provide WorkerOptions.ExecutablePath.");
     }
 }

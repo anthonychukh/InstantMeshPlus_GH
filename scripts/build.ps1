@@ -17,6 +17,10 @@ if ($null -eq $cmakeCommand) {
 } else {
     $cmake = $cmakeCommand.Source
 }
+$ctest = Join-Path (Split-Path -Parent $cmake) 'ctest.exe'
+if (-not (Test-Path -LiteralPath $ctest -PathType Leaf)) {
+    throw "CTest was not found beside CMake at '$ctest'."
+}
 
 Push-Location $repository
 try {
@@ -24,6 +28,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
     & $cmake --build --preset $preset --target InstantMeshPlus.Worker
     if ($LASTEXITCODE -ne 0) { throw 'Native worker build failed.' }
+    & $ctest --preset $preset
+    if ($LASTEXITCODE -ne 0) { throw 'Native worker smoke test failed.' }
     dotnet build .\InstantMeshPlus.sln -c $Configuration
     if ($LASTEXITCODE -ne 0) { throw 'Managed build failed.' }
     dotnet test .\tests\InstantMeshPlus.Core.Tests\InstantMeshPlus.Core.Tests.csproj -c $Configuration --no-build

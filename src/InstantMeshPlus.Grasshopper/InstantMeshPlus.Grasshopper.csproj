@@ -1,16 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <TargetExt>.gha</TargetExt>
-    <UseWindowsForms>true</UseWindowsForms>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Description>Grasshopper components for constrained Instant Meshes field solving.</Description>
+    <NativeWorkerDirectory Condition="'$(OS)' == 'Windows_NT'">$(MSBuildThisFileDirectory)..\..\artifacts\native\$(Configuration)\worker\$(Configuration)</NativeWorkerDirectory>
+    <NativeWorkerDirectory Condition="'$(OS)' != 'Windows_NT'">$(MSBuildThisFileDirectory)..\..\artifacts\native\macos-universal\$(Configuration)</NativeWorkerDirectory>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\InstantMeshPlus.Core\InstantMeshPlus.Core.csproj" />
-    <PackageReference Include="Grasshopper" Version="8.32.26160.13001" />
-    <PackageReference Include="RhinoCommon" Version="8.32.26160.13001" />
+    <PackageReference Include="Grasshopper" Version="8.32.26160.13001" ExcludeAssets="runtime" />
+    <PackageReference Include="RhinoCommon" Version="8.32.26160.13001" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.WindowsDesktop.App.Ref"
+                      Version="7.0.0"
+                      GeneratePathProperty="true"
+                      PrivateAssets="all"
+                      ExcludeAssets="all" />
+    <Reference Include="System.Windows.Forms"
+               HintPath="$(PkgMicrosoft_WindowsDesktop_App_Ref)\ref\net7.0\System.Windows.Forms.dll"
+               Private="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,9 +28,21 @@
     <EmbeddedResource Include="Resources\Icons\*.png" />
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('..\..\artifacts\native\$(Configuration)\worker\$(Configuration)\InstantMeshPlus.Worker.exe')">
-    <Content Include="..\..\artifacts\native\$(Configuration)\worker\$(Configuration)\InstantMeshPlus.Worker.exe"
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT' And Exists('$(NativeWorkerDirectory)\InstantMeshPlus.Worker.exe')">
+    <Content Include="$(NativeWorkerDirectory)\InstantMeshPlus.Worker.exe"
              Link="InstantMeshPlus.Worker.exe"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(NativeWorkerDirectory)\tbb12.dll"
+             Link="tbb12.dll"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT' And Exists('$(NativeWorkerDirectory)/InstantMeshPlus.Worker')">
+    <Content Include="$(NativeWorkerDirectory)/InstantMeshPlus.Worker"
+             Link="InstantMeshPlus.Worker"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(NativeWorkerDirectory)/libtbb.12.dylib"
+             Link="libtbb.12.dylib"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

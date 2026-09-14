@@ -15,6 +15,10 @@ from typing import Any
 VERSION_PATTERN = r"\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?"
 DISTRIBUTION_PATTERN = r"(?:rh\d+(?:_\d+)?|any)"
 PLATFORM_PATTERN = r"(?:any|win|mac)"
+MACH_CPU_TYPES = {
+    0x01000007: "x86_64",
+    0x0100000C: "arm64",
+}
 
 
 def manifest_scalar(text: str, key: str) -> str | None:
@@ -30,6 +34,47 @@ def manifest_scalar(text: str, key: str) -> str | None:
 
 def base_version_matches(version: str, base: str) -> bool:
     return version == base or version.startswith((base + ".", base + "-", base + "+"))
+
+
+def platform_entries(values: list[str], option: str) -> dict[str, set[str]]:
+    result: dict[str, set[str]] = {}
+    for value in values:
+        platform, separator, entry = value.partition(":")
+        platform = platform.strip().lower()
+        entry = entry.replace("\\", "/").strip("/").casefold()
+        if not separator or platform not in {"win", "mac", "any"} or not entry:
+            raise ValueError(f"{option} must use <platform>:<archive-path>; received {value!r}")
+        result.setdefault(platform, set()).add(entry)
+    return result
+
+
+def macho_architectures(data: bytes) -> set[str]:
+    if len(data) < 8:
+        return set()
+    magic = int.from_bytes(data[:4], "big")
+    if magic in {0xCAFEBABE, 0xCAFEBABF}:
+        count = int.from_bytes(data[4:8], "big")
+        entry_size = 20 if magic == 0xCAFEBABE else 32
+        architectures: set[str] = set()
+        for index in range(count):
+            offset = 8 + index * entry_size
+            if offset + 4 > len(data):
+                return set()
+            cpu_type = int.from_bytes(data[offset : offset + 4], "big")
+            name = MACH_CPU_TYPES.get(cpu_type)
+            if name:
+                architectures.add(name)
+        return architectures
+
+    little_magic = int.from_bytes(data[:4], "little")
+    if little_magic in {0xFEEDFACE, 0xFEEDFACF}:
+        cpu_type = int.from_bytes(data[4:8], "little")
+    elif magic in {0xFEEDFACE, 0xFEEDFACF}:
+        cpu_type = int.from_bytes(data[4:8], "big")
+    else:
+        return set()
+    name = MACH_CPU_TYPES.get(cpu_type)
+    return {name} if name else set()
 
 
 def main() -> int:
@@ -61,6 +106,30 @@ def main() -> int:
         help="Required archive-relative path; repeat for multiple entries",
     )
     parser.add_argument(
+        "--platform-required-entry",
+        action="append",
+        default=[],
+        help="Required entry for one platform as win:path or mac:path; repeat as needed",
+    )
+    parser.add_argument(
+        "--platform-prohibited-entry",
+        action="append",
+        default=[],
+        help="Prohibited entry for one platform as win:path or mac:path; repeat as needed",
+    )
+    parser.add_argument(
+        "--platform-executable-entry",
+        action="append",
+        default=[],
+        help="Entry that must retain a Unix executable bit as mac:path",
+    )
+    parser.add_argument(
+        "--platform-universal-entry",
+        action="append",
+        default=[],
+        help="Mach-O entry that must contain arm64 and x86_64 as mac:path",
+    )
+    parser.add_argument(
         "--write-list",
         help="Write validated absolute archive paths to this file on success",
     )
@@ -88,6 +157,22 @@ def main() -> int:
         errors.append(f"No .yak archives found in {root}")
 
     required_entries = {entry.replace("\\", "/").strip("/").casefold() for entry in args.required_entry}
+    try:
+        required_by_platform = platform_entries(
+            args.platform_required_entry, "--platform-required-entry"
+        )
+        prohibited_by_platform = platform_entries(
+            args.platform_prohibited_entry, "--platform-prohibited-entry"
+        )
+        executable_by_platform = platform_entries(
+            args.platform_executable_entry, "--platform-executable-entry"
+        )
+        universal_by_platform = platform_entries(
+            args.platform_universal_entry, "--platform-universal-entry"
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     expected_guid = args.expected_guid.casefold() if args.expected_guid else None
 
     for archive in archives:
@@ -123,11 +208,21 @@ def main() -> int:
                     if not name.endswith(("/", "\\"))
                 ]
                 entry_set = {entry.casefold() for entry in entries}
+                entry_lookup = {entry.casefold(): entry for entry in entries}
                 report["entries"] = entries
-                missing_entries = sorted(required_entries - entry_set)
+                platform_required = required_entries | required_by_platform.get(platform, set())
+                missing_entries = sorted(platform_required - entry_set)
                 if missing_entries:
                     report["errors"].append(
                         "Missing required entries: " + ", ".join(missing_entries)
+                    )
+                prohibited_entries = sorted(
+                    prohibited_by_platform.get(platform, set()) & entry_set
+                )
+                if prohibited_entries:
+                    report["errors"].append(
+                        "Prohibited platform entries are present: "
+                        + ", ".join(prohibited_entries)
                     )
                 debug_entries = sorted(
                     entry for entry in entries if entry.casefold().endswith(".pdb")
@@ -136,6 +231,27 @@ def main() -> int:
                     report["errors"].append(
                         "Debug symbols must not be packaged: " + ", ".join(debug_entries)
                     )
+
+                for executable_entry in sorted(executable_by_platform.get(platform, set())):
+                    actual_entry = entry_lookup.get(executable_entry)
+                    if actual_entry is None:
+                        continue
+                    unix_mode = yak.getinfo(actual_entry).external_attr >> 16
+                    if unix_mode & 0o111 == 0:
+                        report["errors"].append(
+                            f"Entry {actual_entry} does not retain a Unix executable bit"
+                        )
+
+                for universal_entry in sorted(universal_by_platform.get(platform, set())):
+                    actual_entry = entry_lookup.get(universal_entry)
+                    if actual_entry is None:
+                        continue
+                    architectures = macho_architectures(yak.read(actual_entry))
+                    if architectures != {"arm64", "x86_64"}:
+                        rendered = ", ".join(sorted(architectures)) or "none"
+                        report["errors"].append(
+                            f"Entry {actual_entry} is not arm64+x86_64 universal; found {rendered}"
+                        )
 
                 root_manifests = [
                     entry for entry in entries if entry.casefold() in {"manifest.yml", "manifest.yaml"}
@@ -150,11 +266,13 @@ def main() -> int:
                     )
                     manifest_name = manifest_scalar(manifest_text, "name")
                     manifest_version = manifest_scalar(manifest_text, "version")
+                    manifest_platform = manifest_scalar(manifest_text, "platform")
                     manifest_icon = manifest_scalar(manifest_text, "icon")
                     report["manifest"] = {
                         "path": root_manifests[0],
                         "name": manifest_name,
                         "version": manifest_version,
+                        "platform": manifest_platform,
                         "icon": manifest_icon,
                     }
                     if re.search(r"(?i)(\$version\b|__[A-Z0-9_]+__)", manifest_text):
@@ -169,6 +287,10 @@ def main() -> int:
                     if manifest_version != version:
                         report["errors"].append(
                             f"Manifest version {manifest_version!r} != filename version {version!r}"
+                        )
+                    if manifest_platform is None or manifest_platform.lower() != platform:
+                        report["errors"].append(
+                            f"Manifest platform {manifest_platform!r} != filename platform {platform!r}"
                         )
                     if manifest_icon:
                         icon_entry = manifest_icon.replace("\\", "/").strip("/")
@@ -192,6 +314,17 @@ def main() -> int:
     if len(versions) > 1:
         errors.append(f"Archives do not share one version: {', '.join(versions)}")
 
+    archive_keys = [
+        (report["version"], report["distribution"], report["platform"])
+        for report in valid_reports
+    ]
+    duplicate_keys = sorted({key for key in archive_keys if archive_keys.count(key) > 1})
+    for version, distribution, platform in duplicate_keys:
+        errors.append(
+            "Duplicate archive distribution: "
+            f"version={version}, distribution={distribution}, platform={platform}"
+        )
+
     expected_distributions = sorted(
         {value.lower() for value in args.expected_distribution}
     )
@@ -207,6 +340,24 @@ def main() -> int:
             "Platform set mismatch: "
             f"expected {', '.join(expected_platforms)}; found {', '.join(platforms)}"
         )
+    if expected_distributions and expected_platforms:
+        expected_pairs = {
+            (distribution, platform)
+            for distribution in expected_distributions
+            for platform in expected_platforms
+        }
+        actual_pairs = {
+            (report["distribution"], report["platform"])
+            for report in valid_reports
+        }
+        if actual_pairs != expected_pairs:
+            render = lambda pairs: ", ".join(
+                f"{distribution}/{platform}" for distribution, platform in sorted(pairs)
+            )
+            errors.append(
+                "Distribution/platform pair mismatch: "
+                f"expected {render(expected_pairs)}; found {render(actual_pairs)}"
+            )
 
     for report in reports:
         errors.extend(

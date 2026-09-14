@@ -2,6 +2,8 @@
 **/bin/
 **/obj/
 TestResults/
+__pycache__/
+*.pyc
 
 # Native build output
 artifacts/

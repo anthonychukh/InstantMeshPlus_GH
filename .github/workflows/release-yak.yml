@@ -15,30 +15,17 @@ concurrency:
 env:
   YAK_CLI_VERSION: 0.13.0
   YAK_PUBLIC_SOURCE: https://yak.rhino3d.com
-  PACKAGE_NAME: InstantMeshPlus
-  EXPECTED_DISTRIBUTION: rh8_32
+  PACKAGE_NAME: instantmeshplus
   RELEASE_BRANCH: main
 
 jobs:
-  validate-and-release:
+  preflight:
     runs-on: windows-2022
-    environment: yak-production
     steps:
       - name: Check out tagged commit
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          submodules: recursive
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
 
       - name: Validate tag, version, and release branch
         shell: pwsh
@@ -83,9 +70,6 @@ jobs:
           Invoke-WebRequest `
             -Uri "https://files.mcneel.com/yak/tools/$env:YAK_CLI_VERSION/yak.exe" `
             -OutFile $yakPath
-          if (-not (Test-Path -LiteralPath $yakPath -PathType Leaf)) {
-            throw 'Yak CLI download did not create a file.'
-          }
           "YAK_PATH=$yakPath" | Out-File -FilePath $env:GITHUB_ENV -Append
           & $yakPath version
           if ($LASTEXITCODE -ne 0) { throw 'Downloaded Yak CLI did not run.' }
@@ -93,11 +77,54 @@ jobs:
       - name: Refuse an existing public Yak version
         shell: pwsh
         run: |
-          & .\scripts\Test-YakPackageVersion.ps1 `
+          .\scripts\Test-YakPackageVersion.ps1 `
             -YakPath $env:YAK_PATH `
             -Source $env:YAK_PUBLIC_SOURCE `
             -PackageName $env:PACKAGE_NAME `
             -Version $env:PACKAGE_VERSION
+
+  build:
+    needs: preflight
+    uses: ./.github/workflows/build.yml
+    with:
+      sign_macos: ${{ vars.ENABLE_MACOS_SIGNING == 'true' }}
+    secrets: inherit
+
+  publish:
+    needs:
+      - preflight
+      - build
+    runs-on: windows-2022
+    environment: yak-production
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: instantmeshplus-yak-both
+          path: artifacts/yak/combined
+
+      - name: Read release version
+        shell: pwsh
+        run: |
+          [xml] $props = Get-Content -Raw -LiteralPath 'Directory.Build.props'
+          $version = $props.Project.PropertyGroup.VersionPrefix
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Download pinned Yak CLI
+        shell: pwsh
+        run: |
+          $yakPath = Join-Path $env:RUNNER_TEMP "yak-$env:YAK_CLI_VERSION.exe"
+          Invoke-WebRequest `
+            -Uri "https://files.mcneel.com/yak/tools/$env:YAK_CLI_VERSION/yak.exe" `
+            -OutFile $yakPath
+          "YAK_PATH=$yakPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $yakPath version
+          if ($LASTEXITCODE -ne 0) { throw 'Downloaded Yak CLI did not run.' }
 
       - name: Require Yak production credential
         shell: pwsh
@@ -108,45 +135,23 @@ jobs:
             throw 'The yak-production environment secret YAK_TOKEN is required.'
           }
 
-      - name: Build and test release package
+      - name: Validate exact release package pair
         shell: pwsh
         run: |
-          & .\scripts\Build-YakPackage.ps1 `
+          .\scripts\Validate-YakPackages.ps1 `
+            -Root .\artifacts\yak\combined `
             -Version $env:PACKAGE_VERSION `
-            -YakPath $env:YAK_PATH
+            -ExpectedPlatform win,mac `
+            -WriteList .\artifacts\yak\validated-archives.txt
 
-      - name: Validate Yak archive
+      - name: Recheck public Yak immediately before release
         shell: pwsh
         run: |
-          python .\scripts\validate_yak_archives.py `
-            --root .\artifacts\yak `
-            --package-name $env:PACKAGE_NAME `
-            --filename-prefix instantmeshplus `
-            --base-version $env:PACKAGE_VERSION `
-            --expected-version $env:PACKAGE_VERSION `
-            --expected-distribution $env:EXPECTED_DISTRIBUTION `
-            --expected-platform win `
-            --expected-guid a8053c38-fdfa-4d99-bc31-b285e4bb59c5 `
-            --required-entry manifest.yml `
-            --required-entry icon.png `
-            --required-entry InstantMeshPlus.Grasshopper.gha `
-            --required-entry InstantMeshPlus.Core.dll `
-            --required-entry InstantMeshPlus.Worker.exe `
-            --required-entry LICENSE `
-            --required-entry THIRD_PARTY_NOTICES.md `
-            --required-entry INSTANT_MESHES_LICENSE.txt `
-            --required-entry NLOHMANN_JSON_LICENSE.txt `
-            --required-entry TBB_LICENSE.txt `
-            --required-entry APACHE-2.0_LICENSE.txt `
-            --required-entry PCG32_NOTICE.txt `
-            --required-entry PSS_LICENSE.txt `
-            --required-entry DSET_LICENSE.txt `
-            --required-entry EIGEN_COPYING_MPL2.txt `
-            --required-entry EIGEN_COPYING_README.txt `
-            --required-entry EIGEN_COPYING_BSD.txt `
-            --required-entry EIGEN_COPYING_MINPACK.txt `
-            --required-entry GRASSHOPPER_ASYNC_COMPONENT_LICENSE.txt `
-            --write-list .\artifacts\yak\validated-archives.txt
+          .\scripts\Test-YakPackageVersion.ps1 `
+            -YakPath $env:YAK_PATH `
+            -Source $env:YAK_PUBLIC_SOURCE `
+            -PackageName $env:PACKAGE_NAME `
+            -Version $env:PACKAGE_VERSION
 
       - name: Create draft GitHub release
         shell: pwsh
@@ -154,7 +159,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $archives = @(Get-Content -LiteralPath '.\artifacts\yak\validated-archives.txt')
-          if ($archives.Count -ne 1) { throw "Expected one validated archive, found $($archives.Count)." }
+          if ($archives.Count -ne 2) { throw "Expected two validated archives, found $($archives.Count)." }
           gh release create $env:GITHUB_REF_NAME @archives `
             --draft `
             --verify-tag `
@@ -162,13 +167,13 @@ jobs:
             --generate-notes
           if ($LASTEXITCODE -ne 0) { throw 'Draft GitHub release creation failed.' }
 
-      - name: Push validated package to public Yak
+      - name: Push both distributions to public Yak
         shell: pwsh
         env:
           YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
         run: |
           $archives = @(Get-Content -LiteralPath '.\artifacts\yak\validated-archives.txt')
-          if ($archives.Count -ne 1) { throw "Expected one validated archive, found $($archives.Count)." }
+          if ($archives.Count -ne 2) { throw "Expected two validated archives, found $($archives.Count)." }
           foreach ($archive in $archives) {
             & $env:YAK_PATH push "--source=$env:YAK_PUBLIC_SOURCE" $archive
             if ($LASTEXITCODE -ne 0) { throw "Public Yak push failed for '$archive'." }
@@ -177,7 +182,7 @@ jobs:
       - name: Verify public Yak package version
         shell: pwsh
         run: |
-          & .\scripts\Test-YakPackageVersion.ps1 `
+          .\scripts\Test-YakPackageVersion.ps1 `
             -YakPath $env:YAK_PATH `
             -Source $env:YAK_PUBLIC_SOURCE `
             -PackageName $env:PACKAGE_NAME `
@@ -196,5 +201,6 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value @"
           ## Yak public release
 
-          Published `$env:PACKAGE_NAME` version `$env:PACKAGE_VERSION` after Yak search verification.
+          Published Windows and macOS distributions for version `$env:PACKAGE_VERSION` after Yak search verification.
+          macOS signing enabled: `${{ vars.ENABLE_MACOS_SIGNING == 'true' }}`.
           "@

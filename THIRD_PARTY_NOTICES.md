@@ -13,9 +13,9 @@ tag, including its pinned submodules, and at the linked upstream revisions.
   License. Revision
   [`55f93686c01528224f448c19128836e7df245f72`](https://github.com/nlohmann/json/tree/55f93686c01528224f448c19128836e7df245f72).
   Packaged license: `NLOHMANN_JSON_LICENSE.txt`.
-- **Intel Threading Building Blocks (TBB) 2017** by Intel Corporation, under
-  the Apache License 2.0. Revision
-  [`550c18b1132ae1b06285b2488f0344617c46f0ed`](https://github.com/wjakob/tbb/tree/550c18b1132ae1b06285b2488f0344617c46f0ed).
+- **oneAPI Threading Building Blocks (oneTBB) 2023.1.0** by Intel Corporation,
+  UXL Foundation, and contributors, under the Apache License 2.0. Revision
+  [`3046c8b0c29df995980003ea24f4d78c80ec0c8d`](https://github.com/uxlfoundation/oneTBB/tree/3046c8b0c29df995980003ea24f4d78c80ec0c8d).
   Packaged license: `TBB_LICENSE.txt`.
 - **PCG32 compact C++ implementation**, based on the PCG random-number
   generator by Melissa O'Neill and adapted by Wenzel Jakob, under the Apache

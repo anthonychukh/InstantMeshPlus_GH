@@ -10,38 +10,7 @@ public sealed class WorkerIntegrationTests
     {
         var worker = FindWorker();
         var progress = new List<WorkerProgress>();
-        var request = new RemeshRequest
-        {
-            Mesh = Cube(),
-            Settings = new RemeshSettings
-            {
-                TargetMode = TargetMode.EdgeLength,
-                TargetValue = 0.45f,
-                OrientationSymmetry = 4,
-                PositionSymmetry = 4,
-                AlignBoundaries = true,
-                SmoothIterations = 0,
-                PureOutput = false,
-                Deterministic = true,
-                ThreadCount = 1,
-                ProjectionTolerance = 0.25f
-            },
-            OrientationConstraints =
-            [
-                new OrientationConstraint(new Vector3(0, 0, -1), Vector3.UnitX)
-            ],
-            PositionConstraints =
-            [
-                new PositionConstraint(new Vector3(1, 0, 0), new Vector3(1, 0, 0))
-            ],
-            Guides =
-            [
-                new CurveGuide(
-                    [new Vector3(-1, -0.5f, -1), new Vector3(0, -0.5f, -1), new Vector3(1, -0.5f, -1)],
-                    GuideMode.Orientation,
-                    0.8f)
-            ]
-        };
+        var request = ConstrainedRequest(threadCount: 1);
 
         var result = await new WorkerRunner().RunAsync(
             request,
@@ -58,6 +27,31 @@ public sealed class WorkerIntegrationTests
         Assert.True(result.Diagnostics.AppliedPositionConstraints >= 1);
     }
 
+    [Fact(Timeout = 120_000)]
+    public async Task DeterministicSolveIsStableAcrossRunsAndThreadCounts()
+    {
+        var worker = FindWorker();
+        var runner = new WorkerRunner();
+        var options = new WorkerOptions
+        {
+            ExecutablePath = worker,
+            Timeout = TimeSpan.FromMinutes(1)
+        };
+
+        var singleThreadA = await runner.RunAsync(
+            ConstrainedRequest(threadCount: 1), options,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var singleThreadB = await runner.RunAsync(
+            ConstrainedRequest(threadCount: 1), options,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var fourThreads = await runner.RunAsync(
+            ConstrainedRequest(threadCount: 4), options,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        AssertEquivalentOutput(singleThreadA, singleThreadB);
+        AssertEquivalentOutput(singleThreadA, fourThreads);
+    }
+
     private static string FindWorker()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -71,18 +65,78 @@ public sealed class WorkerIntegrationTests
 #else
         const string configuration = "Release";
 #endif
-        var path = Path.Combine(
-            directory.FullName,
-            "artifacts",
-            "native",
-            configuration,
-            "worker",
-            configuration,
-            WorkerLocator.ExecutableName);
+        var path = OperatingSystem.IsWindows()
+            ? Path.Combine(
+                directory.FullName,
+                "artifacts",
+                "native",
+                configuration,
+                "worker",
+                configuration,
+                WorkerLocator.PlatformExecutableName)
+            : Path.Combine(
+                directory.FullName,
+                "artifacts",
+                "native",
+                "macos-universal",
+                configuration,
+                WorkerLocator.PlatformExecutableName);
         return File.Exists(path)
             ? path
             : throw new FileNotFoundException(
                 $"Build the {configuration} native worker before running {configuration} integration tests.");
+    }
+
+    private static RemeshRequest ConstrainedRequest(int threadCount) => new()
+    {
+        Mesh = Cube(),
+        Settings = new RemeshSettings
+        {
+            TargetMode = TargetMode.EdgeLength,
+            TargetValue = 0.45f,
+            OrientationSymmetry = 4,
+            PositionSymmetry = 4,
+            AlignBoundaries = true,
+            SmoothIterations = 0,
+            PureOutput = false,
+            Deterministic = true,
+            ThreadCount = threadCount,
+            ProjectionTolerance = 0.25f
+        },
+        OrientationConstraints =
+        [
+            new OrientationConstraint(new Vector3(0, 0, -1), Vector3.UnitX)
+        ],
+        PositionConstraints =
+        [
+            new PositionConstraint(new Vector3(1, 0, 0), new Vector3(1, 0, 0))
+        ],
+        Guides =
+        [
+            new CurveGuide(
+                [new Vector3(-1, -0.5f, -1), new Vector3(0, -0.5f, -1), new Vector3(1, -0.5f, -1)],
+                GuideMode.Orientation,
+                0.8f)
+        ]
+    };
+
+    private static void AssertEquivalentOutput(RemeshResult expected, RemeshResult actual)
+    {
+        Assert.Equal(expected.FaceArity, actual.FaceArity);
+        Assert.Equal(expected.Vertices, actual.Vertices);
+        Assert.Equal(expected.FaceIndices, actual.FaceIndices);
+        Assert.Equal(expected.Field, actual.Field);
+        Assert.Equal(expected.OrientationSingularities, actual.OrientationSingularities);
+        Assert.Equal(expected.PositionSingularities, actual.PositionSingularities);
+        Assert.Equal(expected.Diagnostics.Scale, actual.Diagnostics.Scale);
+        Assert.Equal(
+            expected.Diagnostics.AppliedOrientationConstraints,
+            actual.Diagnostics.AppliedOrientationConstraints);
+        Assert.Equal(
+            expected.Diagnostics.AppliedPositionConstraints,
+            actual.Diagnostics.AppliedPositionConstraints);
+        Assert.Equal(expected.Diagnostics.RejectedConstraints, actual.Diagnostics.RejectedConstraints);
+        Assert.Equal(expected.Diagnostics.Warnings, actual.Diagnostics.Warnings);
     }
 
     private static TriangleMesh Cube()

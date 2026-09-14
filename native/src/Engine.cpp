@@ -21,8 +21,7 @@
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
-
-extern int nprocs;
+#include <tbb/global_control.h>
 
 extern bool move_orientation_singularity(
     MultiResolutionHierarchy &mRes, std::uint32_t f_src, std::uint32_t f_target);
@@ -493,7 +492,12 @@ bool movePath(
 
 Result solve(const Request &request) {
     validateInput(request);
-    nprocs = request.settings.threadCount;
+    std::unique_ptr<tbb::global_control> threadLimit;
+    if (request.settings.threadCount > 0) {
+        threadLimit = std::make_unique<tbb::global_control>(
+            tbb::global_control::max_allowed_parallelism,
+            static_cast<std::size_t>(request.settings.threadCount));
+    }
     Result result;
     const auto totalStart = Clock::now();
 

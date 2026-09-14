@@ -7,3 +7,6 @@
 [submodule "third_party/GrasshopperAsyncComponent"]
 	path = third_party/GrasshopperAsyncComponent
 	url = https://github.com/specklesystems/GrasshopperAsyncComponent.git
+[submodule "third_party/oneTBB"]
+	path = third_party/oneTBB
+	url = https://github.com/uxlfoundation/oneTBB.git

@@ -1,41 +1,260 @@
-name: build
+name: Build and validate
 
 on:
   push:
+    branches:
+      - '**'
   pull_request:
+  workflow_call:
+    inputs:
+      sign_macos:
+        description: Sign and notarize the macOS worker before packaging.
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      MACOS_CERTIFICATE_P12:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_API_KEY_P8:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER_ID:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
 
 permissions:
   contents: read
 
+env:
+  YAK_CLI_VERSION: 0.13.0
+
 jobs:
-  windows:
+  windows-package:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
-      - name: Configure native worker
-        run: cmake --preset windows-x64-release
-
-      - name: Build native worker
-        run: cmake --build --preset windows-x64-release --target InstantMeshPlus.Worker
-
-      - name: Build managed solution
-        run: dotnet build InstantMeshPlus.sln -c Release
-
-      - name: Test
-        run: dotnet test tests/InstantMeshPlus.Core.Tests/InstantMeshPlus.Core.Tests.csproj -c Release --no-build
-
-      - name: Upload Grasshopper package payload
-        uses: actions/upload-artifact@v4
+      - uses: actions/setup-python@v6
         with:
-          name: InstantMeshPlus-win-x64
-          path: |
-            src/InstantMeshPlus.Grasshopper/bin/Release/net8.0-windows/InstantMeshPlus.Grasshopper.gha
-            src/InstantMeshPlus.Grasshopper/bin/Release/net8.0-windows/InstantMeshPlus.Core.dll
-            src/InstantMeshPlus.Grasshopper/bin/Release/net8.0-windows/InstantMeshPlus.Worker.exe
+          python-version: '3.13'
+
+      - name: Read package version
+        shell: pwsh
+        run: |
+          [xml] $props = Get-Content -Raw -LiteralPath 'Directory.Build.props'
+          $version = $props.Project.PropertyGroup.VersionPrefix
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'Directory.Build.props does not define VersionPrefix.'
+          }
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Download pinned Yak CLI
+        shell: pwsh
+        run: |
+          $yakPath = Join-Path $env:RUNNER_TEMP "yak-$env:YAK_CLI_VERSION.exe"
+          Invoke-WebRequest `
+            -Uri "https://files.mcneel.com/yak/tools/$env:YAK_CLI_VERSION/yak.exe" `
+            -OutFile $yakPath
+          "YAK_PATH=$yakPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $yakPath version
+          if ($LASTEXITCODE -ne 0) { throw 'Downloaded Yak CLI did not run.' }
+
+      - name: Build, test, and package Windows
+        shell: pwsh
+        run: |
+          .\scripts\Build-YakPackage.ps1 `
+            -Version $env:PACKAGE_VERSION `
+            -Platform win `
+            -YakPath $env:YAK_PATH
+
+      - name: Test package validator
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Validate Windows package
+        shell: pwsh
+        run: |
+          .\scripts\Validate-YakPackages.ps1 `
+            -Root .\artifacts\yak\win `
+            -Version $env:PACKAGE_VERSION `
+            -ExpectedPlatform win
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: instantmeshplus-yak-win
+          path: artifacts/yak/win/*.yak
+          if-no-files-found: error
+          compression-level: 0
+
+  mac-package:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Read package version
+        shell: pwsh
+        run: |
+          [xml] $props = Get-Content -Raw -LiteralPath 'Directory.Build.props'
+          $version = $props.Project.PropertyGroup.VersionPrefix
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'Directory.Build.props does not define VersionPrefix.'
+          }
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build universal macOS worker and run arm64 tests
+        run: bash scripts/build-macos.sh Release
+
+      - name: Sign and notarize macOS package payload
+        if: ${{ inputs.sign_macos == true }}
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: >-
+          bash scripts/sign-notarize-macos.sh
+          "$GITHUB_WORKSPACE/src/InstantMeshPlus.Grasshopper/bin/Release/net8.0"
+
+      - name: Record unsigned CI package
+        if: ${{ inputs.sign_macos != true }}
+        run: echo 'The macOS CI package is intentionally unsigned; signing is an optional release-hardening step.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download pinned Yak CLI
+        shell: bash
+        run: |
+          yak_path="$RUNNER_TEMP/yak-$YAK_CLI_VERSION"
+          curl --fail --silent --show-error --location \
+            "https://files.mcneel.com/yak/tools/$YAK_CLI_VERSION/mac/yak" \
+            --output "$yak_path"
+          chmod 755 "$yak_path"
+          "$yak_path" version
+          echo "YAK_PATH=$yak_path" >> "$GITHUB_ENV"
+
+      - name: Package macOS
+        shell: pwsh
+        run: |
+          ./scripts/Build-YakPackage.ps1 `
+            -Version $env:PACKAGE_VERSION `
+            -Platform mac `
+            -YakPath $env:YAK_PATH `
+            -SkipBuild
+
+      - name: Test package validator
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Validate macOS package
+        shell: pwsh
+        run: |
+          ./scripts/Validate-YakPackages.ps1 `
+            -Root ./artifacts/yak/mac `
+            -Version $env:PACKAGE_VERSION `
+            -ExpectedPlatform mac
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: instantmeshplus-yak-mac
+          path: artifacts/yak/mac/*.yak
+          if-no-files-found: error
+          compression-level: 0
+
+  mac-intel-runtime:
+    needs: mac-package
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: instantmeshplus-yak-mac
+          path: artifacts/downloaded-yak
+
+      - name: Extract and verify the Intel slice
+        shell: bash
+        run: |
+          archives=(artifacts/downloaded-yak/*.yak)
+          if [[ "${#archives[@]}" -ne 1 || ! -f "${archives[0]}" ]]; then
+            echo "Expected one macOS Yak archive." >&2
+            exit 1
+          fi
+          runtime="$GITHUB_WORKSPACE/artifacts/native/macos-universal/Release"
+          mkdir -p "$runtime"
+          unzip -q "${archives[0]}" \
+            InstantMeshPlus.Worker libtbb.12.dylib \
+            -d "$runtime"
+          chmod 755 "$runtime/InstantMeshPlus.Worker" "$runtime/libtbb.12.dylib"
+          lipo -verify_arch x86_64 "$runtime/InstantMeshPlus.Worker"
+          lipo -verify_arch x86_64 "$runtime/libtbb.12.dylib"
+          "$runtime/InstantMeshPlus.Worker" --help
+
+      - name: Run managed and worker integration tests on Intel
+        run: |
+          dotnet build InstantMeshPlus.sln -c Release
+          dotnet test tests/InstantMeshPlus.Core.Tests/InstantMeshPlus.Core.Tests.csproj -c Release --no-build
+
+  aggregate-packages:
+    needs:
+      - windows-package
+      - mac-package
+      - mac-intel-runtime
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: instantmeshplus-yak-*
+          path: artifacts/yak/combined
+          merge-multiple: true
+
+      - name: Read package version
+        shell: pwsh
+        run: |
+          [xml] $props = Get-Content -Raw -LiteralPath 'Directory.Build.props'
+          $version = $props.Project.PropertyGroup.VersionPrefix
+          "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate exact Windows and macOS package pair
+        shell: pwsh
+        run: |
+          .\scripts\Validate-YakPackages.ps1 `
+            -Root .\artifacts\yak\combined `
+            -Version $env:PACKAGE_VERSION `
+            -ExpectedPlatform win,mac
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: instantmeshplus-yak-both
+          path: artifacts/yak/combined/*.yak
+          if-no-files-found: error
+          compression-level: 0

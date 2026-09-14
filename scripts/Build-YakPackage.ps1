@@ -3,6 +3,8 @@ param(
     [Parameter(Mandatory)]
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
     [string] $Version,
+    [ValidateSet('win', 'mac')]
+    [string] $Platform = 'win',
     [string] $YakPath,
     [switch] $SkipBuild
 )
@@ -21,17 +23,30 @@ if ($Version -cne $projectVersion) {
 }
 
 if (-not $SkipBuild) {
-    & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release
+    if ($Platform -eq 'win') {
+        & (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release
+    } else {
+        if (-not $IsMacOS) {
+            throw 'The mac platform package must be built on macOS.'
+        }
+        & bash (Join-Path $PSScriptRoot 'build-macos.sh') Release
+        if ($LASTEXITCODE -ne 0) { throw 'macOS build failed.' }
+    }
 }
 
-$source = Join-Path $repository 'src\InstantMeshPlus.Grasshopper\bin\Release\net8.0-windows'
-$packageRoot = Join-Path $repository 'artifacts\yak\package'
-$artifactRoot = Join-Path $repository 'artifacts\yak'
+$source = Join-Path $repository 'src/InstantMeshPlus.Grasshopper/bin/Release/net8.0'
+$yakRoot = Join-Path $repository 'artifacts/yak'
+$packageRoot = Join-Path $yakRoot "package-$Platform"
+$artifactRoot = Join-Path $yakRoot $Platform
+$resolvedYakRoot = [System.IO.Path]::GetFullPath($yakRoot)
 $resolvedPackageRoot = [System.IO.Path]::GetFullPath($packageRoot)
 $resolvedArtifactRoot = [System.IO.Path]::GetFullPath($artifactRoot)
-if (-not $resolvedPackageRoot.StartsWith($resolvedArtifactRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Refusing to prepare a package outside artifacts\yak.'
+foreach ($candidate in @($resolvedPackageRoot, $resolvedArtifactRoot)) {
+    if (-not $candidate.StartsWith($resolvedYakRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Refusing to prepare a package outside artifacts/yak.'
+    }
 }
+
 New-Item -ItemType Directory -Path $resolvedArtifactRoot -Force | Out-Null
 if (Test-Path -LiteralPath $resolvedPackageRoot) {
     Remove-Item -LiteralPath $resolvedPackageRoot -Recurse -Force
@@ -40,32 +55,45 @@ Get-ChildItem -LiteralPath $resolvedArtifactRoot -File -Filter '*.yak' |
     Remove-Item -Force
 New-Item -ItemType Directory -Path $resolvedPackageRoot -Force | Out-Null
 
-@(
+$runtimeFiles = @(
     'InstantMeshPlus.Grasshopper.gha',
-    'InstantMeshPlus.Core.dll',
-    'InstantMeshPlus.Worker.exe'
-) | ForEach-Object {
-    $item = Join-Path $source $_
-    if (-not (Test-Path -LiteralPath $item)) {
+    'InstantMeshPlus.Core.dll'
+)
+if ($Platform -eq 'win') {
+    $runtimeFiles += @('InstantMeshPlus.Worker.exe', 'tbb12.dll')
+} else {
+    $runtimeFiles += @('InstantMeshPlus.Worker', 'libtbb.12.dylib')
+}
+foreach ($fileName in $runtimeFiles) {
+    $item = Join-Path $source $fileName
+    if (-not (Test-Path -LiteralPath $item -PathType Leaf)) {
         throw "Missing release package file: $item"
     }
     Copy-Item -LiteralPath $item -Destination $resolvedPackageRoot
 }
+
+if ($Platform -eq 'mac') {
+    foreach ($fileName in @('InstantMeshPlus.Worker', 'libtbb.12.dylib')) {
+        & chmod 755 (Join-Path $resolvedPackageRoot $fileName)
+        if ($LASTEXITCODE -ne 0) { throw "Could not set executable permissions on $fileName." }
+    }
+}
+
 Copy-Item -LiteralPath (Join-Path $repository 'LICENSE') -Destination $resolvedPackageRoot
 Copy-Item -LiteralPath (Join-Path $repository 'THIRD_PARTY_NOTICES.md') -Destination $resolvedPackageRoot
 $thirdPartyFiles = @(
-    @{ Source = 'third_party\instant-meshes\LICENSE.txt'; Destination = 'INSTANT_MESHES_LICENSE.txt' }
-    @{ Source = 'third_party\json\LICENSE.MIT'; Destination = 'NLOHMANN_JSON_LICENSE.txt' }
-    @{ Source = 'third_party\instant-meshes\ext\tbb\LICENSE'; Destination = 'TBB_LICENSE.txt' }
-    @{ Source = 'third_party\GrasshopperAsyncComponent\LICENSE'; Destination = 'APACHE-2.0_LICENSE.txt' }
-    @{ Source = 'licenses\PCG32_NOTICE.txt'; Destination = 'PCG32_NOTICE.txt' }
-    @{ Source = 'third_party\instant-meshes\ext\pss\LICENSE.txt'; Destination = 'PSS_LICENSE.txt' }
-    @{ Source = 'third_party\instant-meshes\ext\dset\LICENSE.txt'; Destination = 'DSET_LICENSE.txt' }
-    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.MPL2'; Destination = 'EIGEN_COPYING_MPL2.txt' }
-    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.README'; Destination = 'EIGEN_COPYING_README.txt' }
-    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.BSD'; Destination = 'EIGEN_COPYING_BSD.txt' }
-    @{ Source = 'third_party\instant-meshes\ext\nanogui\ext\eigen\COPYING.MINPACK'; Destination = 'EIGEN_COPYING_MINPACK.txt' }
-    @{ Source = 'third_party\GrasshopperAsyncComponent\LICENSE'; Destination = 'GRASSHOPPER_ASYNC_COMPONENT_LICENSE.txt' }
+    @{ Source = 'third_party/instant-meshes/LICENSE.txt'; Destination = 'INSTANT_MESHES_LICENSE.txt' }
+    @{ Source = 'third_party/json/LICENSE.MIT'; Destination = 'NLOHMANN_JSON_LICENSE.txt' }
+    @{ Source = 'third_party/oneTBB/LICENSE.txt'; Destination = 'TBB_LICENSE.txt' }
+    @{ Source = 'third_party/GrasshopperAsyncComponent/LICENSE'; Destination = 'APACHE-2.0_LICENSE.txt' }
+    @{ Source = 'licenses/PCG32_NOTICE.txt'; Destination = 'PCG32_NOTICE.txt' }
+    @{ Source = 'third_party/instant-meshes/ext/pss/LICENSE.txt'; Destination = 'PSS_LICENSE.txt' }
+    @{ Source = 'third_party/instant-meshes/ext/dset/LICENSE.txt'; Destination = 'DSET_LICENSE.txt' }
+    @{ Source = 'third_party/instant-meshes/ext/nanogui/ext/eigen/COPYING.MPL2'; Destination = 'EIGEN_COPYING_MPL2.txt' }
+    @{ Source = 'third_party/instant-meshes/ext/nanogui/ext/eigen/COPYING.README'; Destination = 'EIGEN_COPYING_README.txt' }
+    @{ Source = 'third_party/instant-meshes/ext/nanogui/ext/eigen/COPYING.BSD'; Destination = 'EIGEN_COPYING_BSD.txt' }
+    @{ Source = 'third_party/instant-meshes/ext/nanogui/ext/eigen/COPYING.MINPACK'; Destination = 'EIGEN_COPYING_MINPACK.txt' }
+    @{ Source = 'third_party/GrasshopperAsyncComponent/LICENSE'; Destination = 'GRASSHOPPER_ASYNC_COMPONENT_LICENSE.txt' }
 )
 foreach ($entry in $thirdPartyFiles) {
     $licenseSource = Join-Path $repository $entry.Source
@@ -74,13 +102,14 @@ foreach ($entry in $thirdPartyFiles) {
     }
     Copy-Item -LiteralPath $licenseSource -Destination (Join-Path $resolvedPackageRoot $entry.Destination)
 }
-$packageIcon = Join-Path $repository 'yak\icon.png'
+
+$packageIcon = Join-Path $repository 'yak/icon.png'
 if (-not (Test-Path -LiteralPath $packageIcon -PathType Leaf)) {
     throw "Missing Yak package icon: $packageIcon"
 }
 Copy-Item -LiteralPath $packageIcon -Destination (Join-Path $resolvedPackageRoot 'icon.png')
 
-$manifestTemplate = Get-Content -Raw (Join-Path $repository 'yak\manifest.yml')
+$manifestTemplate = Get-Content -Raw (Join-Path $repository 'yak/manifest.yml')
 $manifest = $manifestTemplate.Replace('__VERSION__', $Version)
 $manifestPath = Join-Path $resolvedPackageRoot 'manifest.yml'
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -92,7 +121,7 @@ if (-not [string]::IsNullOrWhiteSpace($YakPath)) {
         throw "Yak CLI was not found at '$YakPath'."
     }
     $resolvedYakPath = (Resolve-Path -LiteralPath $YakPath).Path
-} else {
+} elseif ($Platform -eq 'win') {
     $yak = Get-Command yak.exe -ErrorAction SilentlyContinue
     if ($null -ne $yak) {
         $resolvedYakPath = $yak.Source
@@ -102,6 +131,11 @@ if (-not [string]::IsNullOrWhiteSpace($YakPath)) {
             $resolvedYakPath = $rhinoYak
         }
     }
+} else {
+    $rhinoYak = '/Applications/Rhino 8.app/Contents/Resources/bin/yak'
+    if (Test-Path -LiteralPath $rhinoYak -PathType Leaf) {
+        $resolvedYakPath = $rhinoYak
+    }
 }
 if ([string]::IsNullOrWhiteSpace($resolvedYakPath)) {
     throw 'Yak CLI was not found. Pass -YakPath or install Rhino 8.'
@@ -109,7 +143,7 @@ if ([string]::IsNullOrWhiteSpace($resolvedYakPath)) {
 
 Push-Location $resolvedPackageRoot
 try {
-    & $resolvedYakPath build --platform win
+    & $resolvedYakPath build --platform $Platform
     if ($LASTEXITCODE -ne 0) { throw 'Yak package build failed.' }
     $archives = @(Get-ChildItem -LiteralPath $resolvedPackageRoot -File -Filter '*.yak')
     if ($archives.Count -ne 1) {
@@ -122,6 +156,6 @@ try {
 
 $finalArchives = @(Get-ChildItem -LiteralPath $resolvedArtifactRoot -File -Filter '*.yak')
 if ($finalArchives.Count -ne 1) {
-    throw "Expected exactly one final Yak archive, found $($finalArchives.Count)."
+    throw "Expected exactly one final $Platform Yak archive, found $($finalArchives.Count)."
 }
 Write-Output $finalArchives[0].FullName
