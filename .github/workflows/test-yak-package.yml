@@ -70,6 +70,9 @@ jobs:
           "PACKAGE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           & .\scripts\Build-YakPackage.ps1 -Version $version -YakPath $env:YAK_PATH
 
+      - name: Test package validator
+        run: python -m unittest discover -s scripts/tests -v
+
       - name: Validate Yak archive
         shell: pwsh
         run: |

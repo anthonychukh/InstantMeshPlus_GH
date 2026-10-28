@@ -32,6 +32,37 @@ def base_version_matches(version: str, base: str) -> bool:
     return version == base or version.startswith((base + ".", base + "-", base + "+"))
 
 
+def validate_keywords(text: str) -> list[str]:
+    """Check the block-list keywords emitted by Yak, including its GUID metadata."""
+    errors = []
+    in_keywords = False
+    for line in text.splitlines():
+        if re.match(r"^keywords\s*:", line):
+            in_keywords = True
+            if line.split(":", 1)[1].strip():
+                errors.append("Manifest keywords must use a block list")
+            continue
+        if not in_keywords or not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.match(r"^\s*-\s+(.*?)\s*$", line)
+        if not match:
+            if line[0].isspace():
+                errors.append("Manifest keywords must contain one scalar per list item")
+            in_keywords = False
+            continue
+        keyword = match.group(1)
+        if len(keyword) >= 2 and keyword[0] == keyword[-1] and keyword[0] in {"'", '"'}:
+            keyword = keyword[1:-1]
+        # Yak adds this reserved keyword when it inspects the plug-in assembly.
+        if re.fullmatch(r"guid:[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", keyword):
+            continue
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", keyword):
+            errors.append(
+                f"Invalid manifest keyword {keyword!r}: use only letters, numbers, dashes, and underscores"
+            )
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate local .yak archives before a test or public push."
@@ -148,6 +179,7 @@ def main() -> int:
                     manifest_text = yak.read(root_manifests[0]).decode(
                         "utf-8-sig", errors="replace"
                     )
+                    report["errors"].extend(validate_keywords(manifest_text))
                     manifest_name = manifest_scalar(manifest_text, "name")
                     manifest_version = manifest_scalar(manifest_text, "version")
                     manifest_icon = manifest_scalar(manifest_text, "icon")

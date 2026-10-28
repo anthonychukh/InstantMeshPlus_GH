@@ -9,22 +9,22 @@ description: >
 url: https://github.com/anthonychukh/InstantMeshPlus
 icon: icon.png
 keywords:
-  - instant mesh
-  - instant meshes
+  - instant-mesh
+  - instant-meshes
   - grasshopper
-  - rhino 8
+  - rhino-8
   - mesh
   - remesh
   - remeshing
   - retopology
-  - mesh retopology
-  - quad remesh
-  - quad remeshing
-  - quad mesh
-  - triangle remeshing
-  - field aligned remeshing
+  - mesh-retopology
+  - quad-remesh
+  - quad-remeshing
+  - quad-mesh
+  - triangle-remeshing
+  - field-aligned-remeshing
   - field
-  - orientation field
-  - position field
-  - curve guides
+  - orientation-field
+  - position-field
+  - curve-guides
   - quad
