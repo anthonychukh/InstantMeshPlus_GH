@@ -218,7 +218,10 @@ public abstract class GH_AsyncComponent<T> : GH_Component, IDisposable
     {
         lock (_stateGate)
         {
-            if (_setData == 1)
+            // Synchronous solves publish in the current solution, so their
+            // recipients must expire normally. Only async solves defer this
+            // until the completed workers are ready to publish.
+            if (!_runAsynchronously || _setData == 1)
                 base.ExpireDownStreamObjects();
         }
     }
