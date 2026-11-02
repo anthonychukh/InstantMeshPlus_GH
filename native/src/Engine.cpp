@@ -119,13 +119,24 @@ void copyInput(const Request &request, MatrixXu &F, MatrixXf &V) {
     }
 }
 
-float targetScale(const Settings &settings, const MeshStats &stats) {
+float targetFieldScale(const Settings &settings, const MeshStats &stats) {
     if (stats.mSurfaceArea <= 0)
         throw std::runtime_error("Input mesh has zero surface area");
 
     float faceCount = -1.0f;
-    if (settings.targetMode == TargetMode::EdgeLength)
-        return settings.targetValue;
+    if (settings.targetMode == TargetMode::EdgeLength) {
+        // The user targets FINAL mesh edges; the hierarchy uses the spacing of
+        // the position lattice BEFORE extraction. Upstream extract_faces()
+        // subdivides each regular quad into four only for (posy == 4 && pure_quad),
+        // inserting edge midpoints and a face center. Its final edges are then
+        // half a lattice cell. Triangle and quad-dominant extraction do not do
+        // this. Invert that extraction ratio here, before preprocessing/solving,
+        // rather than changing user input, output coordinates, or upstream code.
+        const float outputEdgeToFieldScale =
+            settings.posy == 4 && settings.pureOutput ? 0.5f : 1.0f;
+        return settings.targetValue / outputEdgeToFieldScale;
+    }
+    // Count modes retain upstream's pre-extraction density convention.
     if (settings.targetMode == TargetMode::FaceCount)
         faceCount = settings.targetValue;
     else
@@ -504,7 +515,7 @@ Result solve(const Request &request) {
     progress("preprocess", 0.0f);
     auto phaseStart = Clock::now();
     MeshStats stats = compute_mesh_stats(F, V, request.settings.deterministic);
-    const float scale = targetScale(request.settings, stats);
+    const float scale = targetFieldScale(request.settings, stats);
     if (!std::isfinite(scale) || scale <= 0)
         throw std::runtime_error("Derived target edge length is invalid");
     result.scale = scale;

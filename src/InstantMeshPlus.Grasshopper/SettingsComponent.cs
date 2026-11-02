@@ -23,14 +23,14 @@ public sealed class SettingsComponent : GH_Component
     protected override void RegisterInputParams(GH_InputParamManager inputs)
     {
         inputs.AddIntegerParameter("Target Mode", "Mode", "0 = face count, 1 = vertex count, 2 = edge length.", GH_ParamAccess.item, 0);
-        inputs.AddNumberParameter("Target", "Target", "Face count, vertex count, or model-unit edge length.", GH_ParamAccess.item, 1000);
+        inputs.AddNumberParameter("Target", "Target", "Face count, vertex count, or approximate final mesh edge length in model units (including Pure Output subdivision).", GH_ParamAccess.item, 1000);
         inputs.AddIntegerParameter("Orientation Symmetry", "RoSy", "2, 4, or 6-fold orientation symmetry.", GH_ParamAccess.item, 4);
         inputs.AddIntegerParameter("Position Symmetry", "PoSy", "4 for quad layout or 6 for triangular layout.", GH_ParamAccess.item, 4);
         inputs.AddBooleanParameter("Extrinsic", "Extrinsic", "Use extrinsic instead of intrinsic field optimization.", GH_ParamAccess.item, true);
         inputs.AddBooleanParameter("Align Boundaries", "Boundary", "Align orientation and position fields to open boundaries.", GH_ParamAccess.item, true);
         inputs.AddNumberParameter("Crease Angle", "Crease", "Feature angle in degrees; -1 disables crease detection.", GH_ParamAccess.item, 90);
         inputs.AddIntegerParameter("Smooth Iterations", "Smooth", "Extraction smoothing iterations.", GH_ParamAccess.item, 2);
-        inputs.AddBooleanParameter("Pure Output", "Pure", "Prefer pure quads or pure triangles over dominant mixed output.", GH_ParamAccess.item, true);
+        inputs.AddBooleanParameter("Pure Output", "Pure", "Prefer pure quads or pure triangles over dominant mixed output. Pure quads subdivide the extracted layout; edge-length targeting accounts for this.", GH_ParamAccess.item, true);
         inputs.AddBooleanParameter("Deterministic", "Deterministic", "Use deterministic preprocessing and extraction.", GH_ParamAccess.item, false);
         inputs.AddIntegerParameter("Threads", "Threads", "-1 uses the available processors; positive values set a worker limit.", GH_ParamAccess.item, -1);
         inputs.AddNumberParameter("Projection Tolerance", "Tolerance", "Maximum constraint projection distance; 0 derives it from target scale.", GH_ParamAccess.item, 0);

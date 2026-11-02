@@ -17,6 +17,18 @@ uint32 unless noted.
 Public 6-PoSy triangular mode is encoded as the upstream internal value `3`;
 4-PoSy stays `4`.
 
+In `edgeLength` mode, `targetValue` is the approximate **final mesh** edge
+length in model units. The native worker converts this to position-field
+spacing before solving: pure quad extraction splits each regular lattice
+quad into four, so final edges are half the field spacing. Other extraction
+modes use the requested length directly. Curvature, singularities, boundaries,
+and smoothing can still cause local variation.
+
+Face-count and vertex-count modes retain the upstream pre-extraction density
+convention; pure quad subdivision can increase their final counts. The result
+manifest's `scale` (managed `Diagnostics.Scale`) always reports the internal
+field spacing, not a measured final edge length.
+
 ## Request binary
 
 ```text

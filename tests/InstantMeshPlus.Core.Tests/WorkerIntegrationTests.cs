@@ -5,6 +5,84 @@ namespace InstantMeshPlus.Core.Tests;
 
 public sealed class WorkerIntegrationTests
 {
+    [Theory(Timeout = 120_000)]
+    [InlineData(4, false, 0.5f, 0)]
+    [InlineData(4, true, 0.5f, 0)]
+    [InlineData(4, false, 1.0f, 2)]
+    [InlineData(4, true, 1.0f, 2)]
+    [InlineData(6, false, 0.5f, 0)]
+    [InlineData(6, true, 0.5f, 0)]
+    [InlineData(6, false, 1.0f, 2)]
+    [InlineData(6, true, 1.0f, 2)]
+    public async Task EdgeLengthTargetsFinalMeshEdges(
+        int symmetry, bool pureOutput, float target, int smoothing)
+    {
+        // A flat, uniformly guided patch isolates sizing from curvature and singularities.
+        var vertices = new List<Vector3>();
+        var triangles = new List<uint>();
+        const int cells = 32;
+        const float size = 8;
+        for (var y = 0; y <= cells; y++)
+            for (var x = 0; x <= cells; x++)
+                vertices.Add(new Vector3(size * x / cells, size * y / cells, 0));
+        for (var y = 0; y < cells; y++)
+            for (var x = 0; x < cells; x++)
+            {
+                var a = (uint)(y * (cells + 1) + x);
+                var b = a + 1;
+                var c = a + cells + 1;
+                triangles.AddRange([a, b, c + 1, a, c + 1, c]);
+            }
+
+        var result = await new WorkerRunner().RunAsync(
+            new RemeshRequest
+            {
+                Mesh = new TriangleMesh(vertices, triangles),
+                Settings = new RemeshSettings
+                {
+                    TargetMode = TargetMode.EdgeLength,
+                    TargetValue = target,
+                    OrientationSymmetry = symmetry,
+                    PositionSymmetry = symmetry,
+                    PureOutput = pureOutput,
+                    SmoothIterations = smoothing,
+                    Deterministic = true,
+                    ThreadCount = 1
+                },
+                OrientationConstraints = vertices.Select(p =>
+                    new OrientationConstraint(p, Vector3.UnitX)).ToArray()
+            },
+            new WorkerOptions { ExecutablePath = FindWorker(), Timeout = TimeSpan.FromMinutes(1) },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        // Measure unique interior edges of the returned mesh, not the reported field scale.
+        var edges = new HashSet<(uint, uint)>();
+        var lengths = new List<float>();
+        for (var face = 0; face < result.FaceIndices.Count; face += result.FaceArity)
+            for (var corner = 0; corner < result.FaceArity; corner++)
+            {
+                var a = result.FaceIndices[face + corner];
+                var b = result.FaceIndices[face + (corner + 1) % result.FaceArity];
+                if (a == b || !edges.Add((Math.Min(a, b), Math.Max(a, b))))
+                    continue;
+                var p = result.Vertices[(int)a];
+                var q = result.Vertices[(int)b];
+                if (Interior(p) && Interior(q))
+                    lengths.Add(Vector3.Distance(p, q));
+            }
+        Assert.True(lengths.Count >= 10, "Expected enough interior edges to measure sizing.");
+        lengths.Sort();
+        var median = lengths[lengths.Count / 2];
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"Target={target}, median={median}, mean={lengths.Average()}, field scale={result.Diagnostics.Scale}");
+        Assert.True(median >= target * 0.85f && median <= target * 1.15f,
+            $"PoSy={symmetry}, Pure={pureOutput}, target={target}, median={median}, " +
+            $"mean={lengths.Average()}, edges={lengths.Count}, field scale={result.Diagnostics.Scale}");
+
+        bool Interior(Vector3 p) =>
+            p.X > target && p.X < size - target && p.Y > target && p.Y < size - target;
+    }
+
     [Fact(Timeout = 120_000)]
     public async Task SolvesConstrainedClosedMeshAndReturnsFields()
     {
